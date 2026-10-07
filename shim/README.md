@@ -18,4 +18,6 @@ in `Documents\SAdK\maps` appear in the map picker) through in-memory patches to 
 - Install: copy it into the game's `bin` folder, next to `SADK.exe`. Remove it to undo.
 - Optional: `ForceBridge = true` under `[LobbyServer]` in `data\lobby\config\LobbySettings.ini` always
   hosts through the bridge, without the reachability test.
+- Optional: `DisableBillboards = true` under `[LobbyServer]` replaces the dead advertising screens in the lobby
+  world with a plain area of the board's own texture (`BillboardTexture`, `BillboardRect` adjust it).
 - Optional: `bin\sadk_bridge.ini` `[Bridge] port=` overrides the stub's bridge port (default 7072).

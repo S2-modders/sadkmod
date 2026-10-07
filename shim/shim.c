@@ -74,6 +74,10 @@ static unsigned long vip;                 /* network order */
 static unsigned vbase;
 static volatile LONG welcomed, bridged;   /* WELCOME received / hosting goes through the bridge */
 static int force_bridge;                  /* LobbySettings.ini [LobbyServer] ForceBridge = true */
+static int disable_billboards;            /* LobbySettings.ini [LobbyServer] DisableBillboards = true */
+static char billboard_texture[64] = "sign_ad0.dds";  /* [LobbyServer] BillboardTexture: loaded for the screens */
+static int billboard_rect[4] = {305, 680, 730, 1005};  /* [LobbyServer] BillboardRect: x0,y0,x1,y1 of that texture */
+static int billboard_crop_on = 1;
 /* The shim calls game functions at fixed addresses, which only the DRM-free build is known to have. On any
    other SADK.exe it stays a pure pass-through: no bridge, no tags, no game patches. */
 #define SUPPORTED_EXE_MD5 "d4832bc5103c14f5445471af29b8d778"
@@ -211,6 +215,16 @@ static void read_config(void)
     char *f = fb;
     while (*f == ' ' || *f == '"') f++;
     force_bridge = !_strnicmp(f, "true", 4) || *f == '1' || !_strnicmp(f, "yes", 3);
+    GetPrivateProfileStringA("LobbyServer", "DisableBillboards", "false", fb, sizeof fb, path);
+    for (f = fb; *f == ' ' || *f == '"'; f++) ;
+    disable_billboards = !_strnicmp(f, "true", 4) || *f == '1' || !_strnicmp(f, "yes", 3);
+    GetPrivateProfileStringA("LobbyServer", "BillboardTexture", "sign_ad0.dds", billboard_texture,
+                             sizeof billboard_texture, path);
+    char rect[64];
+    GetPrivateProfileStringA("LobbyServer", "BillboardRect", "305,680,730,1005", rect, sizeof rect, path);
+    billboard_crop_on = sscanf(rect, "%d,%d,%d,%d", &billboard_rect[0], &billboard_rect[1], &billboard_rect[2],
+                               &billboard_rect[3]) == 4 && billboard_rect[2] > billboard_rect[0] &&
+                        billboard_rect[3] > billboard_rect[1];
     char *h = host;                                         /* tolerate Host = "1.2.3.4" */
     while (*h == ' ' || *h == '"') h++;
     for (char *e = h + strlen(h); e > h && (e[-1] == ' ' || e[-1] == '"'); ) *--e = 0;
@@ -224,9 +238,9 @@ static void read_config(void)
     char own[MAX_PATH];
     snprintf(own, sizeof own, "%s\\bin\\sadk_bridge.ini", game_root);
     bridge_port = (unsigned short)GetPrivateProfileIntA("Bridge", "port", 7072, own);
-    log_line("config: lobby %s:%u (%s), game port %u, bridge port %u, ForceBridge %s", h, lobby_port,
-             lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", game_port, bridge_port,
-             force_bridge ? "true" : "false");
+    log_line("config: lobby %s:%u (%s), game port %u, bridge port %u, ForceBridge %s, DisableBillboards %s", h,
+             lobby_port, lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", game_port, bridge_port,
+             force_bridge ? "true" : "false", disable_billboards ? "true" : "false");
 }
 
 static int reachability_test(void)
@@ -289,6 +303,8 @@ static int file_md5(const char *path, char out[33])
     return ok;
 }
 
+static void apply_map_patches(void);
+
 static DWORD WINAPI startup_thread(LPVOID arg)
 {
     (void)arg;
@@ -315,6 +331,9 @@ static DWORD WINAPI startup_thread(LPVOID arg)
         return 0;
     }
     read_config();
+    /* Before the game loads anything: the lobby scene (and its billboard textures) loads before the login. Safe
+       this early because only the DRM-free build is accepted, whose code is never packed. */
+    apply_map_patches();
     SOCKET c = lobby_ip == INADDR_NONE ? INVALID_SOCKET : tcp_connect(lobby_ip, bridge_port, 5000);
     char line[256];
     if (c == INVALID_SOCKET) {
@@ -379,7 +398,7 @@ static DWORD WINAPI startup_thread(LPVOID arg)
  *      a map that is not in Documents\SAdK\maps is served from the game's own map folder.
  *   4. S2TftpSession::CloseFile S 00427990 (joiner finishing a download): the host-chosen file name
  *      may only land in Documents\SAdK\maps as .s2m/.bmp.
- * Applied on the first connect (the exe's code is unpacked by then, also for the SecuROM build),
+ * Applied at start-up, right after the exe check (only the DRM-free build is accepted, so nothing is packed),
  * and only where the original bytes match exactly. */
 typedef int (__cdecl *fopen_s_fn)(FILE **, const char *, const char *);
 typedef int (__cdecl *rename_fn)(const char *, const char *);
@@ -586,6 +605,79 @@ static void __stdcall shim_append_maps(int location, void *list, void *names, fl
     GAME_APPEND_MAPS(MAP_LOCATION_USER, list, names, user_colour);
 }
 
+/* Billboard screen texture swap. GetTexture's normal file load is `MOV EDX,[ESI+0x28]; MOV ECX,EAX; CALL EDX`
+ * (00504806): a virtual call loader(this = texture, const std::string *name, flags...). It is replaced by
+ * `MOV ECX,EAX; CALL billboard_load`, which swaps the name of ad0/ad1/ad2.tga for BillboardTexture, calls the
+ * original loader (vtbl+0x28) and crops the result. */
+static unsigned char billboard_name_str[28];      /* MSVC 2005 std::string: +4 buffer/pointer, +0x14 size, +0x18 cap */
+
+static const void *billboard_name(const unsigned char *name)
+{
+    unsigned size = *(const unsigned *)(name + 0x14), cap = *(const unsigned *)(name + 0x18);
+    const char *text = cap < 16 ? (const char *)(name + 4) : *(const char *const *)(name + 4);
+    if (size == 7 && (!_strnicmp(text, "ad0.tga", 7) || !_strnicmp(text, "ad1.tga", 7) || !_strnicmp(text, "ad2.tga", 7)))
+        return billboard_name_str;
+    return name;
+}
+
+/* After the swapped load: copy BillboardRect of the loaded texture into a new 512x512 texture with the game's own
+ * D3DX (d3dx9_38.dll, which also decodes DXT) and put it in place of the full sheet. CTexture fields (Ghidra,
+ * CTexture::CreateFromURL S 004e7880 / CreateFromFile S 004e80d0): +0x14 device, +0x18 IDirect3DTexture9*,
+ * +0x58 width, +0x5c height. */
+typedef long (WINAPI *d3dx_create_tex_fn)(void *, unsigned, unsigned, unsigned, unsigned long, unsigned long,
+                                          unsigned long, void **);
+typedef long (WINAPI *d3dx_load_surf_fn)(void *, const void *, const RECT *, void *, const void *, const RECT *,
+                                         unsigned long, unsigned long);
+typedef long (WINAPI *com_get_surface_fn)(void *, unsigned, void **);
+typedef unsigned long (WINAPI *com_release_fn)(void *);
+#define COM_FN(obj, slot, type) ((type)((*(void ***)(obj))[slot]))
+
+static void billboard_crop(unsigned char *tex_obj)
+{
+    if (!billboard_crop_on) return;
+    HMODULE d3dx = GetModuleHandleA("d3dx9_38.dll");
+    d3dx_create_tex_fn create = d3dx ? (d3dx_create_tex_fn)GetProcAddress(d3dx, "D3DXCreateTexture") : NULL;
+    d3dx_load_surf_fn load = d3dx ? (d3dx_load_surf_fn)GetProcAddress(d3dx, "D3DXLoadSurfaceFromSurface") : NULL;
+    void *device = *(void **)(tex_obj + 0x14), *full = *(void **)(tex_obj + 0x18), *cropped = NULL;
+    void *src = NULL, *dst = NULL;
+    if (!create || !load || !device || !full) {
+        log_line("billboards: crop skipped (d3dx %p, texture %p)", (void *)d3dx, full);
+        return;
+    }
+    RECT r = {billboard_rect[0], billboard_rect[1], billboard_rect[2], billboard_rect[3]};
+    long hr = create(device, 512, 512, 1, 0, 21 /* A8R8G8B8 */, 1 /* managed */, &cropped);
+    if (hr >= 0) hr = COM_FN(full, 18, com_get_surface_fn)(full, 0, &src);           /* GetSurfaceLevel */
+    if (hr >= 0) hr = COM_FN(cropped, 18, com_get_surface_fn)(cropped, 0, &dst);
+    if (hr >= 0) hr = load(dst, NULL, NULL, src, NULL, &r, 3 /* D3DX_FILTER_LINEAR */, 0);
+    if (src) COM_FN(src, 2, com_release_fn)(src);
+    if (dst) COM_FN(dst, 2, com_release_fn)(dst);
+    if (hr < 0) {
+        if (cropped) COM_FN(cropped, 2, com_release_fn)(cropped);
+        log_line("billboards: crop failed (hr %08lx)", (unsigned long)hr);
+        return;
+    }
+    *(void **)(tex_obj + 0x18) = cropped;
+    *(unsigned *)(tex_obj + 0x58) = 512;
+    *(unsigned *)(tex_obj + 0x5c) = 512;
+    COM_FN(full, 2, com_release_fn)(full);
+    log_line("billboards: screen = %s (%d,%d)-(%d,%d)", billboard_texture, (int)r.left, (int)r.top,
+             (int)r.right, (int)r.bottom);
+}
+
+/* Stands in for the loader call at 00504806: S2CE::CTexture::CreateFromFile S 004e80d0, `bool __thiscall
+ * (CTexture *this, const std::string *path, bool singleLevel, bool defaultPool, bool fullQuality)`, RET 0x10. The
+ * bools are passed through as the 4-byte stack slots they occupy; the result is a bool in AL. */
+typedef unsigned char (__attribute__((thiscall)) *texture_load_fn)(void *, const void *, int, int, int);
+
+static unsigned char __attribute__((thiscall)) billboard_load(void *tex, const void *name, int single_level,
+                                                              int default_pool, int full_quality)
+{
+    const void *swapped = billboard_name(name);
+    unsigned char ok = (*(texture_load_fn **)tex)[0x28 / 4](tex, swapped, single_level, default_pool, full_quality);
+    if (ok && swapped != name) billboard_crop(tex);
+    return ok;
+}
+
 static int patch_bytes(unsigned addr, const unsigned char *expect, const unsigned char *repl, size_t n,
                        const char *what)
 {
@@ -640,6 +732,30 @@ static void apply_map_patches(void)
     ok += patch_call(0x00426d14, 0x006f5197, (void *)shim_fwrite, "download progress");
     ok += patch_call(0x00427a08, 0x006f6789, (void *)shim_abort_remove, "download abort");
     log_line("map sharing: %d of 9 patches active (maps folder %s)", ok, maps_dir);
+
+    /* Billboards (Lobby::CGfxTextureMgr::GetTexture S 005046c0): textures named ad0/ad1/ad2.tga become an embedded
+       Internet Explorer rendering http://www.funatics.de/sadk/forwardingN.html. Those pages are gone (HTTP 404),
+       so the screens show red plus IE's "navigation canceled" page. With DisableBillboards the three compare
+       literals are renamed so the screens load from file, and billboard_load gives them a cut-out of the board's
+       own texture instead (docs/BINARY_PATCHES.md, "Billboards"). */
+    static const unsigned char ad_old[3][3] = {{'a','d','0'}, {'a','d','1'}, {'a','d','2'}};
+    static const unsigned char ad_new[3][3] = {{'#','d','0'}, {'#','d','1'}, {'#','d','2'}};
+    static const unsigned ad_addr[3] = {0x007e6240, 0x007e6208, 0x007e61d0};
+    if (disable_billboards) {
+        int bb = 0;
+        for (int i = 0; i < 3; i++) bb += patch_bytes(ad_addr[i], ad_old[i], ad_new[i], 3, "billboard texture from disk");
+        size_t n = strlen(billboard_texture);
+        if (n > 15) n = 15;                                     /* inline std::string buffer */
+        memcpy(billboard_name_str + 4, billboard_texture, n);
+        *(unsigned *)(billboard_name_str + 0x14) = (unsigned)n;
+        *(unsigned *)(billboard_name_str + 0x18) = 15;
+        static const unsigned char load_old[7] = {0x8B, 0x56, 0x28, 0x8B, 0xC8, 0xFF, 0xD2};
+        unsigned char load_new[7] = {0x8B, 0xC8, 0xE8};
+        *(int *)(load_new + 3) = (int)((unsigned)(UINT_PTR)billboard_load - (0x00504808 + 5));
+        bb += patch_bytes(0x00504806, load_old, load_new, 7, "billboard screen texture swap");
+        log_line("billboards: %d of 4 patches active (DisableBillboards, screens show %.15s, crop %s)", bb,
+                 billboard_texture, billboard_crop_on ? "on" : "off");
+    }
 }
 
 /* ── Hooks ───────────────────────────────────────────────────────────────── */
@@ -648,7 +764,6 @@ int WINAPI shim_connect(SOCKET s, const struct sockaddr *name, int namelen)
     const struct sockaddr_in *in = (const struct sockaddr_in *)name;
     if (name && namelen >= (int)sizeof *in && in->sin_family == AF_INET) {
         WaitForSingleObject(welcome_done, 3000);       /* a fast login must not overtake HELLO */
-        apply_map_patches();
         unsigned short port = swap16(in->sin_port);
         if (welcomed && in->sin_addr.s_addr == lobby_ip && port == lobby_port) {
             tag_set(s, TAG_LOBBY, 0);
