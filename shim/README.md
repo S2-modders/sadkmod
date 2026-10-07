@@ -8,7 +8,9 @@ directly, so the shim only sees TinCat traffic. `WSOCK32.dll` is not a KnownDLL,
 from the game folder before the system one (live 2026-10-07: loaded, all exports resolved).
 
 Every export is forwarded by ordinal to the system `wsock32.dll`; `connect`, `send`, `listen` and
-`closesocket` are hooked. The shim logs to `wsock32_shim.txt` next to the game exe.
+`closesocket` are hooked. It also enables map sharing (missing maps download from the host, custom maps
+in `Documents\SAdK\maps` appear in the map picker) through in-memory patches to `SADK.exe`, listed in
+`docs/BINARY_PATCHES.md`. The shim logs to `wsock32_shim.txt` next to the game exe.
 
 - Build (Linux, mingw-w64): `make` -> `wsock32.dll`.
 - Install: copy it into the game's `bin` folder, next to `SADK.exe`. Remove it to undo.
