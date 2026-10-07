@@ -12,4 +12,6 @@ Every export is forwarded by ordinal to the system `wsock32.dll`; `connect`, `se
 
 - Build (Linux, mingw-w64): `make` -> `wsock32.dll`.
 - Install: copy it into the game's `bin` folder, next to `SADK.exe`. Remove it to undo.
+- Optional: `ForceBridge = true` under `[LobbyServer]` in `data\lobby\config\LobbySettings.ini` always
+  hosts through the bridge, without the reachability test.
 - Optional: `bin\sadk_bridge.ini` `[Bridge] port=` overrides the stub's bridge port (default 7072).

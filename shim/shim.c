@@ -5,6 +5,7 @@
  *  startup  control connection to the lobby host's bridge port ("SADKB1 HELLO <token>"), then the
  *           reachability test: listen on the game port, ask the stub to connect back ("CHECK"); no
  *           probe within 10 s -> "BRIDGED" (this client can only host through the bridge).
+ *           LobbySettings.ini [LobbyServer] ForceBridge = true skips the test and always bridges.
  *  connect  to the lobby: tag the connection ("SADKB1 LOBBY <token>" before TinCat's first byte);
  *           to a bridged game's virtual address: redirect to the relay ("SADKB1 JOIN <game id>").
  *  send     writes a pending tag first.
@@ -70,7 +71,8 @@ static unsigned long lobby_ip;            /* network order */
 static unsigned short lobby_port, bridge_port, game_port, relay_port;
 static unsigned long vip;                 /* network order */
 static unsigned vbase;
-static volatile LONG welcomed, bridged;   /* WELCOME received / reachability test failed */
+static volatile LONG welcomed, bridged;   /* WELCOME received / hosting goes through the bridge */
+static int force_bridge;                  /* LobbySettings.ini [LobbyServer] ForceBridge = true */
 static HANDLE welcome_done;               /* set once the startup handshake has finished either way */
 static SOCKET control = INVALID_SOCKET;
 static CRITICAL_SECTION control_cs;
@@ -199,6 +201,11 @@ static void read_config(void)
     snprintf(path, sizeof path, "%s\\data\\lobby\\config\\LobbySettings.ini", game_root);
     GetPrivateProfileStringA("LobbyServer", "Host", "", host, sizeof host, path);
     lobby_port = (unsigned short)GetPrivateProfileIntA("LobbyServer", "Port", 7070, path);
+    char fb[16];
+    GetPrivateProfileStringA("LobbyServer", "ForceBridge", "false", fb, sizeof fb, path);
+    char *f = fb;
+    while (*f == ' ' || *f == '"') f++;
+    force_bridge = !_strnicmp(f, "true", 4) || *f == '1' || !_strnicmp(f, "yes", 3);
     char *h = host;                                         /* tolerate Host = "1.2.3.4" */
     while (*h == ' ' || *h == '"') h++;
     for (char *e = h + strlen(h); e > h && (e[-1] == ' ' || e[-1] == '"'); ) *--e = 0;
@@ -212,8 +219,9 @@ static void read_config(void)
     char own[MAX_PATH];
     snprintf(own, sizeof own, "%s\\bin\\sadk_bridge.ini", game_root);
     bridge_port = (unsigned short)GetPrivateProfileIntA("Bridge", "port", 7072, own);
-    log_line("config: lobby %s:%u (%s), game port %u, bridge port %u", h, lobby_port,
-             lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", game_port, bridge_port);
+    log_line("config: lobby %s:%u (%s), game port %u, bridge port %u, ForceBridge %s", h, lobby_port,
+             lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", game_port, bridge_port,
+             force_bridge ? "true" : "false");
 }
 
 static int reachability_test(void)
@@ -291,10 +299,15 @@ static DWORD WINAPI startup_thread(LPVOID arg)
     log_line("bridge connected: token %.8s..., relay port %u, virtual ports from %u at %s", token, relay_port,
              vbase, v ? v + 4 : "?");
 
-    int reachable = reachability_test();
-    log_line("reachability: port %u %s", game_port,
-             reachable ? "is reachable from the server - hosting works directly"
-                       : "is NOT reachable from the server - hosting goes through the bridge");
+    int reachable = 0;
+    if (force_bridge) {
+        log_line("reachability: not tested (ForceBridge = true) - hosting goes through the bridge");
+    } else {
+        reachable = reachability_test();
+        log_line("reachability: port %u %s", game_port,
+                 reachable ? "is reachable from the server - hosting works directly"
+                           : "is NOT reachable from the server - hosting goes through the bridge");
+    }
     if (!reachable) {
         InterlockedExchange(&bridged, 1);
         control_send("BRIDGED\n");
