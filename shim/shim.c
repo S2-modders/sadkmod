@@ -439,7 +439,9 @@ static void download_finished(void)
 
 static int session_map_present(void *mgr)
 {
-    unsigned char guid[32] = {0}, uuid[16] = {0};
+    /* NetGUID (vtable + 4 dwords, 0x14 bytes) and NCore::UUID (constructed, GUID at +8..+0x17; the
+       map search compares it there): both get room to spare. */
+    unsigned char guid[32] = {0}, uuid[64] = {0};
     unsigned char name[28] = {0};                          /* MSVC std::string: +4 buf, +0x14 size, +0x18 cap */
     int type = 0;
     *(unsigned *)(name + 0x18) = 15;
