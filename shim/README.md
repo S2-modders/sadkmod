@@ -12,6 +12,8 @@ Every export is forwarded by ordinal to the system `wsock32.dll`; `connect`, `se
 in `Documents\SAdK\maps` appear in the map picker) through in-memory patches to `SADK.exe`, listed in
 `docs/BINARY_PATCHES.md`. The shim logs to `wsock32_shim.txt` next to the game exe.
 
+- **Requires the DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`). The shim hashes the exe at
+  start-up and stays a pure pass-through on any other build: no bridge, no lobby tag, no game patches.
 - Build (Linux, mingw-w64): `make` -> `wsock32.dll`.
 - Install: copy it into the game's `bin` folder, next to `SADK.exe`. Remove it to undo.
 - Optional: `ForceBridge = true` under `[LobbyServer]` in `data\lobby\config\LobbySettings.ini` always

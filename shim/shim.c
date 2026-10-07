@@ -74,6 +74,10 @@ static unsigned long vip;                 /* network order */
 static unsigned vbase;
 static volatile LONG welcomed, bridged;   /* WELCOME received / hosting goes through the bridge */
 static int force_bridge;                  /* LobbySettings.ini [LobbyServer] ForceBridge = true */
+/* The shim calls game functions at fixed addresses, which only the DRM-free build is known to have. On any
+   other SADK.exe it stays a pure pass-through: no bridge, no tags, no game patches. */
+#define SUPPORTED_EXE_MD5 "d4832bc5103c14f5445471af29b8d778"
+static int exe_supported;
 static HANDLE welcome_done;               /* set once the startup handshake has finished either way */
 static SOCKET control = INVALID_SOCKET;
 static CRITICAL_SECTION control_cs;
@@ -257,6 +261,34 @@ static int reachability_test(void)
     return ok;
 }
 
+/* MD5 of a file as 32 lowercase hex digits; 0 on failure. */
+static int file_md5(const char *path, char out[33])
+{
+    HCRYPTPROV prov = 0;
+    HCRYPTHASH hash = 0;
+    int ok = 0;
+    HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE) return 0;
+    if (CryptAcquireContextA(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
+        CryptCreateHash(prov, CALG_MD5, 0, 0, &hash)) {
+        static unsigned char buf[65536];
+        DWORD got;
+        ok = 1;
+        while (ReadFile(f, buf, sizeof buf, &got, NULL) && got)
+            if (!CryptHashData(hash, buf, got, 0)) { ok = 0; break; }
+        unsigned char digest[16];
+        DWORD len = sizeof digest;
+        if (ok && CryptGetHashParam(hash, HP_HASHVAL, digest, &len, 0))
+            for (int i = 0; i < 16; i++) sprintf(out + 2 * i, "%02x", digest[i]);
+        else
+            ok = 0;
+    }
+    if (hash) CryptDestroyHash(hash);
+    if (prov) CryptReleaseContext(prov, 0);
+    CloseHandle(f);
+    return ok;
+}
+
 static DWORD WINAPI startup_thread(LPVOID arg)
 {
     (void)arg;
@@ -273,6 +305,15 @@ static DWORD WINAPI startup_thread(LPVOID arg)
     for (int i = 0; i < 16; i++) sprintf(token + 2 * i, "%02x", rnd[i]);
     WSADATA wsa;
     REAL(WSAStartup)(MAKEWORD(1, 1), &wsa);
+    char exe[MAX_PATH], md5[33] = "";
+    GetModuleFileNameA(NULL, exe, MAX_PATH);
+    exe_supported = file_md5(exe, md5) && strcmp(md5, SUPPORTED_EXE_MD5) == 0;
+    if (!exe_supported) {
+        log_line("SADK.exe MD5 %s is not the supported DRM-free build (%s) - the shim stays inactive",
+                 md5[0] ? md5 : "unreadable", SUPPORTED_EXE_MD5);
+        SetEvent(welcome_done);
+        return 0;
+    }
     read_config();
     SOCKET c = lobby_ip == INADDR_NONE ? INVALID_SOCKET : tcp_connect(lobby_ip, bridge_port, 5000);
     char line[256];
@@ -574,7 +615,7 @@ static int patch_call(unsigned addr, unsigned expect_target, void *new_target, c
 static void apply_map_patches(void)
 {
     static volatile LONG done;
-    if (InterlockedExchange(&done, 1)) return;
+    if (!exe_supported || InterlockedExchange(&done, 1)) return;
     char docs[MAX_PATH];
     if (SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs) == S_OK) {   /* as Sys_GetMyDocumentsPath */
         char d[MAX_PATH];
