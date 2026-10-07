@@ -1,7 +1,7 @@
 """Build helper: generates the forwarding thunks (thunks.S), the export table (wsock32.def) and the
 ordinal/index table (ordinals.h) from exports.txt (ordinal name). Every export jumps through
 real_ptrs[i], filled from the system wsock32.dll by ordinal at load; the HOOKED ones are exported from
-shim.c instead (shim_<name>, stdcall)."""
+bridge.cpp instead (extern "C" shim_<name>, stdcall)."""
 
 HOOKED = {"connect": 12, "send": 16, "listen": 8, "closesocket": 4}   # name -> stdcall arg bytes
 

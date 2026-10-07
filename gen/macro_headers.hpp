@@ -1,0 +1,16 @@
+#include <windows.h>
+#include <winsock2.h>
+#include <shlobj.h>
+#include <wincrypt.h>
+#include <d3d9.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <cstdint>
+#include <cstddef>
+#include <string>
+#include <vector>
+#include <span>
+#include <array>
+#include <algorithm>

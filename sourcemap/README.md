@@ -13,6 +13,8 @@ Each folder holds:
 - **`types.gdt`** — a Ghidra data type archive with every type the project defined: classes, structs,
   vtable structs, enums and function definitions. It can also be opened on its own in the Data Type
   Manager (*Open File Archive*).
+- **`types.json.gz`** — the same types as plain JSON (struct fields with offsets, enums, typedefs, function
+  types), for tools that cannot read a Ghidra archive; `sadkmod` generates its C++ declarations from it.
 - **`sourcemap.json.gz`** — the namespaces and classes, every named function with its signature,
   calling convention and tags, the project's own labels, typed globals, and all comments.
 
@@ -51,5 +53,12 @@ Ghidra's own behaviour: about 450 functions have no name in the original, only a
 
 ## Regenerating
 
-`mapping/scripts/ExportSourcemap.java` writes these files from the project's Ghidra database (via the
+`mapping/scripts/ExportSourcemap.java` writes `types.gdt` and `sourcemap.json.gz` from the project's Ghidra database (via the
 Ghidra MCP: `run_ghidra_script ExportSourcemap.java` with `program=sadk_noav.exe`, then `tincat3.dll`).
+Then `ExportTypesJson.java` (in this folder) writes `types.json.gz` from `types.gdt`. It runs inside Ghidra:
+through the MCP, or headless with any small PE as the throwaway import:
+
+```
+analyzeHeadless <empty dir> tmp -import <any small .dll> -noanalysis -deleteProject \
+  -scriptPath <repo>/sourcemap -postScript ExportTypesJson.java <repo>/sourcemap/sadk_noav.exe
+```

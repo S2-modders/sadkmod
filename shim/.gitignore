@@ -2,3 +2,4 @@ wsock32.dll
 thunks.S
 wsock32.def
 ordinals.h
+build/
