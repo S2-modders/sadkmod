@@ -26,16 +26,14 @@ int main(int argc, char **argv)
     static sadk::MappedImage image;
     if (!sadk::map_image(argv[1], image)) return 2;
     sadk::verify_with(sadk::Module::sadk, &image);
-    cfg.disable_billboards = true;
     apply_map_sharing();
-    apply_billboards();
     sadk::verify_with(sadk::Module::sadk, nullptr);
     auto n = sadk::verify_counts();
-    std::printf("%d patches match, %d do not (13 expected to match; log: %s)\n", n.matched, n.mismatched, log);
+    std::printf("%d patches match, %d do not (9 expected to match; log: %s)\n", n.matched, n.mismatched, log);
     if (FILE *f = std::fopen(log, "r")) {
         char line[512];
         while (std::fgets(line, sizeof line, f)) std::fputs(line, stdout);
         std::fclose(f);
     }
-    return n.matched == 13 && n.mismatched == 0 ? 0 : 1;
+    return n.matched == 9 && n.mismatched == 0 ? 0 : 1;
 }

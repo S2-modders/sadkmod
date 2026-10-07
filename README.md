@@ -10,6 +10,8 @@ shim (`bridge/wsock32_shim`, built on it). It gives such code:
 - **Hooks**: whole functions through MinHook, or single vtable slots.
 - **Mirrors of the MSVC 2005 containers** the game passes around (`std::string`, `vector`, `list`).
 - **A verify mode** that runs a mod's patch code against a copy of `SADK.exe` without starting the game.
+- **The mod host** (`host.hpp`) and the **mod interface** (`mod.hpp`): the shim loads `<game>\mods\*` with it —
+  data file overrides and `mod.dll` code. How to write a mod: `mods/README.md`.
 
 Only the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`) is described. Every address is
 specific to that build, so a mod must check `sadk::exe_is_supported()` before patching or hooking anything.
@@ -51,11 +53,13 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | Header | What |
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
-| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook), `hook_slot` for vtables and other function tables |
+| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook), `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
 | `patch.hpp` | `patch`, `patch_call`, `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
+| `mod.hpp` | the mod interface: `sadkmod_api`, `SADKMOD_MAIN`, `mod_name()` / `mod_dir()`; in a mod, `log` and hooks go to the host |
+| `host.hpp` | the mod host: `start_mods()` (index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading) |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
 
@@ -131,8 +135,12 @@ runtime dependencies).
 - Library: the self-test passes under Wine (`make test`: string layouts, MinHook through `Hook<>`, table
   slots, patches, verify mode against the DRM-free `SADK.exe`). All generated headers compile with every
   layout check passing.
-- The bridge shim on sadkmod: all 13 patches verified against `SADK.exe`. Loading and pass-through were
-  tested under Wine. **Not yet tested in the running game** `[TODO]`.
+- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (two mods overriding the same
+  file, a switched-off mod, `CreateFileA`/`W` redirects, writes left alone, the mesh-cache redirect, a test
+  `mod.dll` chaining a hook onto the host's).
+- The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' 5 patches
+  verified in `mods/`. Loading and pass-through were tested under Wine. **Not yet tested in the running game**
+  `[TODO]`.
 
 ## Third-party
 

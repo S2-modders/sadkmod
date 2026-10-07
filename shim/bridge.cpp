@@ -263,9 +263,9 @@ void bridge_startup()
         struct hostent *he = REAL(gethostbyname)(h);
         if (he && he->h_addr_list[0]) std::memcpy(&lobby_ip, he->h_addr_list[0], 4);
     }
-    log("config: lobby %s:%u (%s), game port %u, bridge port %u, ForceBridge %s, DisableBillboards %s", h,
-        cfg.lobby_port, lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", cfg.game_port, cfg.bridge_port,
-        cfg.force_bridge ? "true" : "false", cfg.disable_billboards ? "true" : "false");
+    log("config: lobby %s:%u (%s), game port %u, bridge port %u, ForceBridge %s", h, cfg.lobby_port,
+        lobby_ip == INADDR_NONE ? "UNRESOLVED" : "resolved", cfg.game_port, cfg.bridge_port,
+        cfg.force_bridge ? "true" : "false");
     SOCKET c = lobby_ip == INADDR_NONE ? INVALID_SOCKET : tcp_connect(lobby_ip, cfg.bridge_port, 5000);
     char line[256];
     if (c == INVALID_SOCKET) {

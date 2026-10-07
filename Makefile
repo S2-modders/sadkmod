@@ -41,10 +41,22 @@ build/libsadkmod.a: $(OBJ)
 TESTS = build/tests/test_sadkmod.exe
 build/tests/%.exe: tests/%.cpp build/libsadkmod.a
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32
+	$(CXX) $(CXXFLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
-test: $(TESTS)
+build/tests/test_mod.dll: tests/test_mod.cpp build/libsadkmod.a
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -shared -static-libgcc -static-libstdc++ -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+
+# The host test runs from a scratch game folder: build/hostroot/bin/test_host.exe
+build/tests/test_host.exe: tests/test_host.cpp build/libsadkmod.a
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+
+test: $(TESTS) build/tests/test_host.exe build/tests/test_mod.dll
 	WINEDEBUG=-all wine build/tests/test_sadkmod.exe "$(SADK_EXE)"
+	rm -rf build/hostroot && mkdir -p build/hostroot/bin
+	cp build/tests/test_host.exe build/tests/test_mod.dll build/hostroot/bin/
+	WINEDEBUG=-all wine build/hostroot/bin/test_host.exe
 
 clean:
 	rm -rf build

@@ -3,6 +3,8 @@
 #pragma once
 #include "core.hpp"
 #include "hook.hpp"
+#include "host.hpp"
+#include "mod.hpp"
 #include "msvc.hpp"
 #include "patch.hpp"
 #include "runtime.hpp"

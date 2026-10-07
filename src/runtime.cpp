@@ -1,5 +1,6 @@
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
 #include <sadkmod/game/sadk_noav/module.hpp>
+#include <sadkmod/mod.hpp>
 #include <sadkmod/msvc.hpp>
 #include <sadkmod/runtime.hpp>
 
@@ -26,6 +27,15 @@ void log_open(const char *path)
 
 void log(const char *fmt, ...)
 {
+    if (const sadkmod_api *h = host_api()) {          // in a mod: one line into the host's log
+        char text[1024];
+        va_list ap;
+        va_start(ap, fmt);
+        std::vsnprintf(text, sizeof text, fmt, ap);
+        va_end(ap);
+        h->log_line(mod_name(), text);
+        return;
+    }
     if (!log_ready) return;
     EnterCriticalSection(&log_cs);
     if (FILE *f = std::fopen(log_file, "a")) {
@@ -94,6 +104,7 @@ std::string file_md5(const char *path)
 
 bool exe_is_supported()
 {
+    if (host_api()) return true;                      // the host only loads mods into the supported build
     static int state = -1;
     if (state < 0) state = file_md5(exe_path()) == game::md5;
     return state == 1;
@@ -128,6 +139,13 @@ void *proc_address(const char *dll, const char *name)
     HMODULE m = GetModuleHandleA(dll);
     return m ? reinterpret_cast<void *>(GetProcAddress(m, name)) : nullptr;
 }
+
+// ── Mod side (mod.hpp) ───────────────────────────────────────────────────────────────────────────────────────────
+static const sadkmod_api *bound_host;
+void bind_host(const sadkmod_api *api) { bound_host = api; }
+const sadkmod_api *host_api() { return bound_host; }
+const char *mod_name() { return bound_host ? bound_host->mod_name : ""; }
+const char *mod_dir() { return bound_host ? bound_host->mod_dir : ""; }
 
 // ── Game heap ────────────────────────────────────────────────────────────────────────────────────────────────────
 void *game_malloc(std::size_t size) { return game::fn::_malloc(size); }

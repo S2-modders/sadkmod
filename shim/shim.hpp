@@ -1,13 +1,13 @@
 // SAdK host bridge shim: a proxy wsock32.dll for tincat3.dll (which imports all of its sockets from WSOCK32.dll
 // by ordinal). Every export is forwarded by ordinal to the system wsock32.dll; four are hooked (bridge.cpp). On the
-// DRM-free SADK.exe it also patches the game in memory (mapshare.cpp, billboards.cpp), built on sadkmod.
+// DRM-free SADK.exe it is also the mod host (sadkmod/README.md, mods/README.md) and patches the game for map
+// sharing (mapshare.cpp), built on sadkmod.
 //
-//   main.cpp        DllMain, the forwarding table, start-up
+//   main.cpp        DllMain, the forwarding table, start-up (before SADK.exe's entry point) and mod loading
 //   config.cpp      LobbySettings.ini / network.ini / sadk_bridge.ini
 //   bridge.cpp      the host bridge (docs/bridge-protocol.md): control connection, reachability, data channels,
 //                   the hooked socket functions
 //   mapshare.cpp    map sharing (docs/BINARY_PATCHES.md, "Map sharing")
-//   billboards.cpp  the lobby's advertising screens (docs/BINARY_PATCHES.md, "Billboards")
 #pragma once
 #include <winsock2.h>
 #include <windows.h>
@@ -42,10 +42,6 @@ struct Config {
     std::string host;                     // LobbySettings.ini [LobbyServer] Host
     unsigned short lobby_port = 7070;     //   Port
     bool force_bridge = false;            //   ForceBridge: always host through the bridge
-    bool disable_billboards = false;      //   DisableBillboards: plain screens instead of the dead ad pages
-    std::string billboard_texture = "sign_ad0.dds";            // BillboardTexture
-    int billboard_rect[4] = {305, 680, 730, 1005};             // BillboardRect x0,y0,x1,y1 of that texture
-    bool billboard_crop = true;                                // false if BillboardRect is unusable
     unsigned short game_port = 5479;      // network.ini [Basics] gamePort
     unsigned short bridge_port = 7072;    // bin\sadk_bridge.ini [Bridge] port
 };
@@ -57,4 +53,3 @@ void bridge_make_token();                 // start-up thread: random token, WSAS
 void bridge_startup();                    // after the patches: control connection, reachability test, OPEN loop
 void bridge_inactive();                   // unsupported exe: release anything waiting for the bridge
 void apply_map_sharing();
-void apply_billboards();

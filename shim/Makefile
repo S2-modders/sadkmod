@@ -4,10 +4,10 @@
 CXX = i686-w64-mingw32-g++
 SADKMOD = ../../sadkmod
 CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -I. -I$(SADKMOD)/include -I$(SADKMOD)/build/include
-LIBS = $(SADKMOD)/build/libsadkmod.a -lkernel32 -ladvapi32 -lshell32
+LIBS = $(SADKMOD)/build/libsadkmod.a -lkernel32 -ladvapi32 -lshell32 -luser32
 SADK_EXE ?= $(HOME)/sadk_game/bin/SADK.exe
 
-PARTS = config bridge mapshare billboards
+PARTS = config bridge mapshare
 OBJ = $(PARTS:%=build/%.o) build/main.o
 
 LIB = $(SADKMOD)/build/libsadkmod.a
