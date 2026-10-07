@@ -396,10 +396,27 @@ static volatile LONG downloads_active;
 static unsigned long download_bytes, download_reported;
 static DWORD download_last_activity;
 
+/* NComm_SendUINotification takes a std::string* (the game passes the result of a string builder), not a
+ * char*: build an MSVC 2005 std::string around the text (+4 inline buffer or data pointer, +0x14 size,
+ * +0x18 capacity). The observers only read or copy it; the text must outlive the call. */
 static void room_message(const char *text)
 {
+    static char held[256];
+    unsigned char str[28] = {0};
+    size_t len = strlen(text);
+    if (len > sizeof held - 1) len = sizeof held - 1;
+    if (len < 16) {
+        memcpy(str + 4, text, len);
+        *(unsigned *)(str + 0x18) = 15;
+    } else {
+        memcpy(held, text, len);
+        held[len] = 0;
+        *(char **)(str + 4) = held;
+        *(unsigned *)(str + 0x18) = (unsigned)len;
+    }
+    *(unsigned *)(str + 0x14) = (unsigned)len;
     void *mgr = GAME_GET_MANAGER();
-    if (mgr) GAME_NOTIFY(mgr, text);
+    if (mgr) GAME_NOTIFY(mgr, (const char *)str);
 }
 
 static int download_running(void)
