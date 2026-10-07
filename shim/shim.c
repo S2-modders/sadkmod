@@ -696,7 +696,7 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
         if (!real_ptrs[i]) missing++;
     }
 
-    log_line("shim loaded: pid %lu, exe %s, shim %s, real %s (%s), %d of %d exports resolved",
+    log_line("shim loaded (build " __DATE__ " " __TIME__ "): pid %lu, exe %s, shim %s, real %s (%s), %d of %d exports resolved",
              GetCurrentProcessId(), exe, me, sys, real_dll ? "ok" : "LOAD FAILED", N_EXPORTS - missing, N_EXPORTS);
     if (!real_dll) return FALSE;
     welcome_done = CreateEventA(NULL, TRUE, FALSE, NULL);
