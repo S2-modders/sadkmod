@@ -140,9 +140,9 @@ runtime dependencies).
 - Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (two mods overriding the same
   file, a switched-off mod, `CreateFileA`/`W` redirects, writes left alone, the mesh-cache redirect, a test
   `mod.dll` chaining a hook onto the host's).
-- The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' 5 patches
-  verified in `mods/`. Loading and pass-through were tested under Wine. **Not yet tested in the running game**
-  `[TODO]`.
+- The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' patches and hook
+  targets verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
+  repo's mods work.
 
 ## Third-party
 

@@ -100,5 +100,5 @@ Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder here
 
 The host is tested under Wine (`make test` in `sadkmod`): discovery and order, overrides through `CreateFileA` /
 `CreateFileW`, writes left alone, the mesh-cache redirect, `mod.dll` loading and two hooks chained on one
-function. The mods' patches are verified against `SADK.exe`. **Nothing of the mod system has run in the game
-yet** [TODO].
+function. The mods' patches are verified against `SADK.exe`. In the game (maintainer's test, 2026-10-08) the mod
+system and the repo's mods work.
