@@ -66,6 +66,11 @@ int free_pending();   // returns how many mod.dlls still wait
 // MD5 of the mod folder's content: every file, by lowercase path relative to the folder, name and bytes.
 std::string content_hash(const char *folder);
 
+// While off on this thread, the file redirect leaves out the files of server mods (the game's own file is opened).
+// For the build checksum: server mods are matched by the mod that transfers them, not by the checksum, which the
+// game sends before any transfer (docs/s2tftp.md, "Around a transfer").
+void redirect_server_mods(bool on);
+
 // The file redirect on its own, for tests: a path as the game would pass it -> the file to open instead, or
 // nullptr (also nullptr for writes into data\). The result stays valid until the next call on the same thread.
 const wchar_t *redirect(const wchar_t *path, bool write);

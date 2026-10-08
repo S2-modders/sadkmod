@@ -130,6 +130,10 @@ int main()
     CHECK(read((root + "/DATA/lobby/config/npc_bodyparts.xml").c_str()) == "MOD A");
     CHECK(read("..\\data\\lobby\\config\\untouched.xml") == "UNTOUCHED");
     CHECK(read("..\\data\\game\\settings\\rules.xml") == "SERVER RULES");
+    sadk::host::redirect_server_mods(false);   // as for the build checksum: server mods' files left out
+    CHECK(read("..\\data\\game\\settings\\rules.xml") == "GAME RULES");
+    CHECK(read("..\\data\\lobby\\config\\npc_bodyparts.xml") == "MOD A");   // a client mod's still counts
+    sadk::host::redirect_server_mods(true);
     {
         std::wstring w = L"..\\data\\lobby\\config\\npc_bodyparts.xml";
         HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);

@@ -9,7 +9,7 @@ This folder holds the repo's own mods:
 | Mod | What it does |
 |---|---|
 | `gamehostbridge` | Hosting from behind NAT, through the lobby server (`docs/bridge-protocol.md`): hooks the shim's `connect` / `send` / `listen` / `closesocket`, which carry all of TinCat's traffic. `gamehostbridge.ini`: `[Bridge] ForceBridge` (always host through the bridge), `Port` (the server's bridge port, default 7072). Installed by SAdK-ServerConfig. |
-| `assetshare` | Map sharing: a joiner downloads a map the host has from the host, custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps` (false: refuse downloads; the game tells the host with its own TFTP write error). [TODO: the host's server mods, and `AcceptServerMods`] Installed by SAdK-ServerConfig. |
+| `assetshare` | What a match's players share, over the game's own file transfer (`docs/s2tftp.md`): the map, and the host's server mods (below). Custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps`, `AcceptServerMods` (false: refuse those downloads; you can't get ready in a game that needs them). Needed by every player: a host kicks a joiner without it. Installed by SAdK-ServerConfig. |
 | `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig, whose "Disable billboards" is `Enabled` in the mod's `billboards.ini`. `docs/BINARY_PATCHES.md`, "Billboards". |
 | `borderless` | The game's fullscreen becomes a borderless window over one monitor (`borderless.ini`: `Monitor`), the picture at the resolution set in the game's options, stretched. The game's own settings are untouched. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
 | `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer, and the lobby town flickers with it (maintainer's test, 2026-10-08; cause unknown, not pursued): a tool for model makers, not for playing. |
@@ -111,11 +111,38 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
 - **Settings:** `sadk::mod_settings()` is the mod's `<name>.ini` next to its `mod.dll` (e.g. `billboards.ini`);
   other files live in `sadk::mod_dir()`.
 
+## Server mods in a match (assetshare)
+
+A server mod changes what happens in a match, so every player of a match needs the same server mods. The host's
+set counts, and the assetshare mod makes it so:
+
+1. **Joining.** When the host's game information arrives, the joiner fetches the host's manifest: its active server
+   mods with name, version and content hash. A host kicks a joiner that has not asked for it within 20 s ("This game
+   needs the assetshare mod"): without assetshare a player would play with different rules.
+2. **Your own mods first.** Your server mods that the host does not run, or runs in another version or content, are
+   switched off for this game. Only then is anything activated, so nothing conflicts.
+3. **The host's mods.** Where you have the same mod (name, version and content hash), your copy is used. Every other
+   one is downloaded into `<game>\mods\.temp_<name>`, checked against the host's hash and activated. A mod whose
+   download is refused (`AcceptServerMods = false`), fails, or does not match keeps you from getting ready.
+4. **In the room.** Lines in the pre-game room's chat say what happens: the mods switched off, each download and its
+   progress, and the result ("Server mods for this game: rules 3 (downloaded), balance 1 (yours)."). "Ready" is
+   refused until all of it is done.
+5. **Afterwards.** When the network session ends (the match is left, the room is left, a kick), the downloaded mods
+   are switched off and deleted and your own come back on. A `.temp_` folder left by a crash is deleted at the next
+   start.
+
+What is transferred is one archive per mod or map file, compressed with LZMS when both sides run Windows 8 or later
+(the Windows Compression API; stored otherwise), sent in 4 KB blocks whatever the host's connection type. The game's
+build checksum, which a joiner sends before anything can be transferred, leaves out server mods' files on both sides
+(`GameData_ComputeBuildChecksum`; `sadkmod_api::redirect_server_mods`): server mods are matched by name, version and
+hash instead. [TODO: not yet run in the game]
+
 ## Building the repo's mods
 
 ```
 make            # build/<name>/ for every mod here: mod.dll plus its .ini files (builds sadkmod first)
 make verify     # every mod's patches against a DRM-free SADK.exe under Wine (SADK_EXE=<path>)
+make test       # assetshare's archive format under Wine (Wine has no LZMS: only the stored form runs there)
 ```
 
 Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder here with its `.cpp` files (and any
