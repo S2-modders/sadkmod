@@ -2,10 +2,11 @@
 // (a mod's name; "" for the host itself). It lives in the host; sadkmod's hook_function / hook_slot / patch go
 // here directly in the host and through sadkmod_api in a mod.
 //
-// Order: several detours on one target run in load order. Each owner has a rank (set_rank; the host gives every
-// mod its place in folder-name order): the lowest rank runs first and its `original` leads to the next. The host
-// itself ("") is always last, next to the game's code; an owner without a rank comes just before the host. Detours
-// of the same rank run in the order they were installed. So the order no longer depends on when a mod installs.
+// Order: several detours on one target run in load order. Each owner has an order key (set_order; the host uses the
+// lowercase folder name, without the ".temp_" of a downloaded mod): the key that sorts first runs first and its
+// `original` leads to the next. The host itself ("") is always last, next to the game's code; an owner without a
+// key comes just before the host. Detours of the same key run in the order they were installed. So the order does
+// not depend on when a mod installs its hooks, also for a mod added later.
 //
 // Hooks: one MinHook hook per target, which jumps through a small stub to the first detour. Every detour's
 // `original` leads to the next one and the last to MinHook's trampoline (the game's code). Removing a detour points
@@ -26,7 +27,7 @@
 
 namespace sadk::registry {
 
-void set_rank(const char *owner, int rank);
+void set_order(const char *owner, const char *key);
 
 typedef void (*ConflictHandler)(const char *text);
 void set_conflict_handler(ConflictHandler h);   // tests; nullptr restores the default (message box, then exit)

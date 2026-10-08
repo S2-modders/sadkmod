@@ -91,10 +91,19 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   an integer) and `sadkmod_flags()`: what the mod changes, combinable — `SADKMOD_CLIENT` (only this player's game),
   `SADKMOD_SERVER` (matches: every player of a match needs it alike), `SADKMOD_LOBBY` (the lobby village). A mod
   without `mod.dll` names its flags with empty files `.client`, `.server`, `.lobby` in its folder. A mod without
-  any flag is not loaded. [TODO: the host does not read the flags yet; server-mod transfer is being built]
+  any flag, or a `mod.dll` without `sadkmod_version` / `sadkmod_flags` (built for an older sadkmod), is not loaded;
+  the log says why. Every other installed mod is loaded at start-up, whatever its flags.
+- **Loading and unloading later:** the host can also add a mod folder outside the scan (a downloaded
+  `mods\.temp_<name>`, which keeps `<name>.ini`), activate it and deactivate any mod again (`sadkmod/include/sadkmod/host.hpp`;
+  for mods, the same through `sadkmod_api`). A mod activated later starts after the game's start-up: its hooks
+  only catch what runs from then on. When the active mods' property scripts (`data\game\scripts\properties`)
+  change, the host fills the game's property database again the next time a match is entered
+  (`docs/data-loading.md`).
 - **Unloading:** `SADKMOD_STOP(stop)` exports `sadkmod_stop()`, called before a mod is unloaded: stop the mod's
   threads, take back what it gave the game. Hooks, table slots and patches made through sadkmod are recorded under
-  the mod's name and taken back by the host; `write_memory` and a mod's own MinHook are not.
+  the mod's folder name and taken back by the host; `write_memory` and a mod's own MinHook are not. The `mod.dll` is
+  freed only when no thread runs in it or has an address inside it on its stack; until then it stays mapped,
+  without any hook or patch.
 - **Interface:** `sadkmod/include/sadkmod/mod.hpp` (`sadkmod_api`, version 2). `SADKMOD_MAIN` checks the version;
   fields are only ever appended. Without sadkmod, a mod can implement the exports itself.
 - **Settings:** `sadk::mod_settings()` is the mod's `<name>.ini` next to its `mod.dll` (e.g. `billboards.ini`);
@@ -112,7 +121,10 @@ Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder here
 
 ## Status
 
-The host is tested under Wine (`make test` in `sadkmod`): discovery and order, data-file conflicts, overrides through `CreateFileA` /
-`CreateFileW`, writes left alone, the mesh-cache redirect, `mod.dll` loading and two hooks chained on one
-function. The mods' patches are verified against `SADK.exe`. In the game (maintainer's test, 2026-10-08) the mod
-system and the repo's mods work.
+The host is tested under Wine (`make test` in `sadkmod`): discovery, flags (from `mod.dll` and marker files; none:
+not loaded), data-file conflicts (also for a mod activated later), overrides through `CreateFileA` / `CreateFileW`,
+writes left alone, the mesh-cache redirect, `mod.dll` loading, hooks chained on one function in load order,
+deactivating and activating mods, a `mod.dll` unloaded while another thread is inside its hook (freed once the thread
+has left), a downloaded `.temp_` mod, the content hash. The mods' patches are verified against `SADK.exe`. In the
+game (maintainer's test, 2026-10-08) the mod system and the repo's mods work, and the property database can be
+filled again between offline matches (`propreload`). Loading and unloading mods in the running game is [TODO].

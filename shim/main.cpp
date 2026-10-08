@@ -41,8 +41,8 @@ static void start(const char *where)
     read_config();
     apply_map_sharing();
     sadk::host::Summary m = sadk::host::start_mods();
-    log("mods: %d folder%s, %d data file%s, %d mod.dll started%s", m.mods, m.mods == 1 ? "" : "s", m.files,
-        m.files == 1 ? "" : "s", m.dlls, m.dll_failures ? " - SOME FAILED, see above" : "");
+    log("mods: %d active, %d data file%s, %d mod.dll started%s", m.mods, m.files, m.files == 1 ? "" : "s", m.dlls,
+        m.skipped ? " - SOME NOT LOADED, see above" : "");
     CloseHandle(CreateThread(nullptr, 0, bridge_thread, nullptr, 0, nullptr));
 }
 

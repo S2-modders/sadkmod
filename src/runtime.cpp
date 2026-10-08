@@ -150,7 +150,10 @@ const char *mod_name() { return bound_host ? bound_host->mod_name : ""; }
 const char *mod_dir() { return bound_host ? bound_host->mod_dir : ""; }
 Ini mod_settings()
 {
-    return Ini(bound_host ? std::string(bound_host->mod_dir) + "\\" + bound_host->mod_name + ".ini" : std::string());
+    if (!bound_host) return Ini(std::string());
+    std::string name = bound_host->mod_name;   // a downloaded mod's folder is .temp_<name>; its file stays <name>.ini
+    if (name.compare(0, 6, ".temp_") == 0) name.erase(0, 6);
+    return Ini(std::string(bound_host->mod_dir) + "\\" + name + ".ini");
 }
 
 // ── Game heap ────────────────────────────────────────────────────────────────────────────────────────────────────

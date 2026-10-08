@@ -1,6 +1,8 @@
 // Mod host test, run under Wine or Windows from <root>\bin\test_host.exe (the Makefile sets up <root>):
-// mod discovery and order, data overrides through CreateFileA/W, write opens left alone, the mesh-cache redirect,
-// mod.dll loading with the API, and two hooks chained on one function (host first, then the mod).
+// mod discovery, flags (mod.dll, marker files, none), data conflicts, overrides through CreateFileA/W, write opens
+// left alone, the mesh-cache redirect, mod.dll loading with the API, hooks chained on one function (the mod's
+// first, the host's next to the function), deactivating and activating mods, a mod.dll unloaded while a thread is
+// inside it (busy, freed later), a downloaded .temp_ mod, and the content hash.
 #include <sadkmod/sadkmod.hpp>
 
 #include <shlobj.h>
@@ -26,9 +28,40 @@ extern "C" __declspec(dllexport) __attribute__((noinline)) int SADK_CDECL test_t
     return k + 1;
 }
 
+// The test mod's sadkmod_stop calls this (found with GetProcAddress on the exe).
+static volatile LONG stops;
+extern "C" __declspec(dllexport) void SADK_CDECL test_mod_stopped() { InterlockedIncrement(&stops); }
+
+// The host's own detour. On the thread `blocked_thread` it waits for `release` (with the mod's detour, which called
+// it, still on that thread's stack).
 using target_fn = int(SADK_CDECL *)(int);
 static target_fn host_original;
-static int SADK_CDECL plus_ten(int x) { return host_original(x) + 10; }
+static volatile DWORD blocked_thread;
+static HANDLE inside, release;
+static int SADK_CDECL plus_ten(int x)
+{
+    if (GetCurrentThreadId() == blocked_thread) {
+        SetEvent(inside);
+        WaitForSingleObject(release, 10000);
+    }
+    return host_original(x) + 10;
+}
+
+static volatile int thread_result;
+static DWORD WINAPI call_on_thread(LPVOID)
+{
+    blocked_thread = GetCurrentThreadId();
+    volatile target_fn call = test_target;
+    thread_result = call(1);
+    return 0;
+}
+
+static bool active(const char *folder)
+{
+    for (auto &m : sadk::host::mods())
+        if (m.folder == folder) return m.active;
+    return false;
+}
 
 static void put(const std::string &path, const char *text)
 {
@@ -67,15 +100,26 @@ int main()
     put(root + "\\data\\lobby\\config\\npc_bodyparts.xml", "ORIGINAL");
     put(root + "\\data\\lobby\\config\\untouched.xml", "UNTOUCHED");
     put(root + "\\mods\\a_first\\data\\lobby\\config\\npc_bodyparts.xml", "MOD A");
+    put(root + "\\mods\\a_first\\.client", "");
     put(root + "\\mods\\b_second\\data\\Lobby\\Config\\NPC_bodyparts.xml", "MOD B");   // the same file, other case: conflict
     put(root + "\\mods\\b_second\\data\\lobby\\avatars\\testmesh.KEX", "MESH");
     put(root + "\\mods\\_switched_off\\data\\lobby\\config\\untouched.xml", "SHOULD NOT APPEAR");
+    put(root + "\\mods\\c_no_flags\\data\\lobby\\config\\untouched.xml", "NO FLAGS: NOT LOADED");
+    put(root + "\\mods\\d_server\\.server", "");
+    put(root + "\\mods\\d_server\\data\\game\\settings\\rules.xml", "SERVER RULES");
+    put(root + "\\data\\game\\settings\\rules.xml", "GAME RULES");
     CopyFileA((root + "\\bin\\test_mod.dll").c_str(), (root + "\\mods\\b_second\\mod.dll").c_str(), FALSE);
 
     CHECK(sadk::hook_function(reinterpret_cast<void *>(test_target), reinterpret_cast<void *>(plus_ten),
                               reinterpret_cast<void **>(&host_original), "test_target +10"));
     sadk::host::Summary s = sadk::host::start_mods();
-    CHECK(s.mods == 2 && s.files == 2 && s.dlls == 1 && s.dll_failures == 0);   // A's file (first wins) and B's mesh
+    CHECK(s.mods == 3 && s.skipped == 1 && s.files == 3 && s.dlls == 1);   // A's file (first wins), B's mesh, D's rules
+    for (auto &m : sadk::host::mods()) {
+        if (m.folder == "a_first") CHECK(m.flags == SADKMOD_CLIENT && !m.has_dll && m.active);
+        if (m.folder == "b_second") CHECK(m.flags == SADKMOD_CLIENT && m.version == 1 && m.has_dll && m.active);
+        if (m.folder == "d_server") CHECK(m.flags == SADKMOD_SERVER && m.active);
+        CHECK(m.folder != "c_no_flags");
+    }
     CHECK(conflicts == 1 && std::strstr(last_conflict, "\"a_first\" and \"b_second\"") &&
           std::strstr(last_conflict, "lobby\\config\\npc_bodyparts.xml"));
     // (The gDecryptData hook fails here, as SADK.exe is not loaded: logged, not checked.)
@@ -85,6 +129,7 @@ int main()
     CHECK(read("..\\data\\lobby\\config\\npc_bodyparts.xml") == "MOD A");
     CHECK(read((root + "/DATA/lobby/config/npc_bodyparts.xml").c_str()) == "MOD A");
     CHECK(read("..\\data\\lobby\\config\\untouched.xml") == "UNTOUCHED");
+    CHECK(read("..\\data\\game\\settings\\rules.xml") == "SERVER RULES");
     {
         std::wstring w = L"..\\data\\lobby\\config\\npc_bodyparts.xml";
         HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -111,10 +156,61 @@ int main()
     // the function: (1 + 1 + 10) * 2.
     volatile target_fn call = test_target;
     CHECK(call(1) == 24);
-    // Everything the mod did is recorded under its name and can be taken back: only the host's +10 remains.
-    CHECK(sadk::registry::count_owned("b_second") == 1);
-    CHECK(sadk::registry::remove_owner("b_second").hooks == 1);
-    CHECK(call(1) == 12);
+    CHECK(sadk::registry::count_owned("b_second") == 1);   // recorded under its folder name
+
+    // A data-only server mod off and on again.
+    CHECK(sadk::host::deactivate("d_server") == sadk::host::Unload::done && !active("d_server"));
+    CHECK(read("..\\data\\game\\settings\\rules.xml") == "GAME RULES");
+    CHECK(sadk::host::deactivate("d_server") == sadk::host::Unload::not_active);
+    CHECK(sadk::host::activate("d_server") && read("..\\data\\game\\settings\\rules.xml") == "SERVER RULES");
+
+    // Unloading the mod.dll while another thread is inside its detour: busy, everything undone, freed later.
+    inside = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    release = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    HANDLE t = CreateThread(nullptr, 0, call_on_thread, nullptr, 0, nullptr);
+    CHECK(WaitForSingleObject(inside, 10000) == WAIT_OBJECT_0);
+    std::string dll = root + "\\mods\\b_second\\mod.dll";
+    CHECK(sadk::host::deactivate("b_second") == sadk::host::Unload::busy && stops == 1);
+    CHECK(sadk::registry::count_owned("b_second") == 0);
+    blocked_thread = 0;
+    CHECK(call(1) == 12);                                      // only the host's +10 is left
+    CHECK(GetModuleHandleA(dll.c_str()) != nullptr);           // still mapped
+    CHECK(!sadk::host::activate("b_second"));                  // not while it waits to be freed
+    SetEvent(release);
+    WaitForSingleObject(t, 10000);
+    CloseHandle(t);
+    CHECK(thread_result == 24);                                // that call ran through the mod to the end
+    CHECK(sadk::host::free_pending() == 0 && GetModuleHandleA(dll.c_str()) == nullptr);
+    CHECK(sadk::host::activate("b_second") && call(1) == 24);  // loaded and started again
+    CHECK(sadk::host::deactivate("b_second") == sadk::host::Unload::done && stops == 2 && call(1) == 12);
+
+    // A downloaded mod: outside the scan until added, listed inactive, then activated; .temp_ is not in its name.
+    std::string dl = root + "\\mods\\.temp_e_download";
+    put(dl + "\\.server", "");
+    put(dl + "\\data\\game\\settings\\extra.xml", "DOWNLOADED");
+    CHECK(!active(".temp_e_download") && sadk::host::add_mod(dl.c_str()) && !sadk::host::add_mod(dl.c_str()));
+    bool listed = false;
+    for (auto &m : sadk::host::mods())
+        if (m.folder == ".temp_e_download") listed = m.name == "e_download" && !m.active && m.flags == SADKMOD_SERVER;
+    CHECK(listed);
+    std::string hash = sadk::host::content_hash(".temp_e_download");
+    CHECK(hash.size() == 32 && hash == sadk::host::content_hash(".temp_e_download"));
+    CHECK(sadk::host::activate(".temp_e_download") && read("..\\data\\game\\settings\\extra.xml") == "DOWNLOADED");
+    put(dl + "\\data\\game\\settings\\extra.xml", "CHANGED");
+    CHECK(sadk::host::content_hash(".temp_e_download") != hash);
+    CHECK(!sadk::host::forget_mod(".temp_e_download"));        // not while active
+    CHECK(sadk::host::deactivate(".temp_e_download") == sadk::host::Unload::done);
+    CHECK(sadk::host::forget_mod(".temp_e_download") && !active(".temp_e_download"));
+
+    // A mod activated later that clashes with an active one: a conflict; the first keeps the file.
+    std::string clash = root + "\\mods\\.temp_f_clash";
+    put(clash + "\\.server", "");
+    put(clash + "\\data\\game\\settings\\rules.xml", "CLASH");
+    int seen = conflicts;
+    CHECK(sadk::host::add_mod(clash.c_str()) && sadk::host::activate(".temp_f_clash"));
+    CHECK(conflicts == seen + 1 && std::strstr(last_conflict, "\"d_server\" and \".temp_f_clash\""));
+    CHECK(read("..\\data\\game\\settings\\rules.xml") == "SERVER RULES");
+    CHECK(sadk::host::deactivate(".temp_f_clash") == sadk::host::Unload::done && sadk::host::forget_mod(".temp_f_clash"));
 
     std::printf("%d checks, %d failed (log: %s\\test_host.log)\n", checks, failures, root.c_str());
     if (FILE *f = std::fopen((root + "\\test_host.log").c_str(), "r")) {

@@ -60,7 +60,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
-| `host.hpp` | the mod host: `start_mods()` (index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading) |
+| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
 
@@ -137,11 +137,9 @@ runtime dependencies).
 
 - Library: the self-test passes under Wine (`make test`: string layouts, MinHook through `Hook<>`, table
   slots, patches, verify mode against the DRM-free `SADK.exe`, the registry: three owners chained on one function
-  and removed middle first, chained table slots, patches undone or kept while another owner shares them). All generated headers compile with every
-  layout check passing.
-- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (two mods overriding the same
-  file, a switched-off mod, `CreateFileA`/`W` redirects, writes left alone, the mesh-cache redirect, a test
-  `mod.dll` chaining a hook onto the host's, then taken back by its owner).
+  installed out of order and run in load order, one removed from the middle, chained table slots, patches undone,
+  overlapping patches reported as a conflict). All generated headers compile with every layout check passing.
+- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`mods/README.md`, "Status").
 - The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' patches and hook
   targets verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
   repo's mods work.

@@ -125,9 +125,9 @@ static void test_registry()
     namespace reg = sadk::registry;
     volatile chained_fn call = chained;
     auto *t = reinterpret_cast<void *>(chained);
-    reg::set_rank("a", 1);                                       // load order a, b, c
-    reg::set_rank("b", 2);
-    reg::set_rank("c", 3);
+    reg::set_order("a", "10_a");                                 // load order a, b, c
+    reg::set_order("b", "20_b");
+    reg::set_order("c", "30_c");
     CHECK(reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3"));   // installed out of order
     CHECK(reg::hook("a", t, (void *)add_ten, (void **)&orig_a, "a +10"));
     CHECK(reg::hook("b", t, (void *)times_two, (void **)&orig_b, "b x2"));

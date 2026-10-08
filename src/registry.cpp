@@ -5,7 +5,6 @@
 #include <MinHook.h>
 #include <windows.h>
 
-#include <climits>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -45,23 +44,26 @@ ConflictHandler conflict_handler = stop_the_game;
 const char *who(const std::string &owner) { return owner.empty() ? "the shim (wsock32.dll)" : owner.c_str(); }
 
 // ── Order ────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Lower rank runs first (outermost). The host ("") is always innermost, next to the game's code; an owner without
-// a rank comes just before it. Equal ranks keep the order of installation.
-std::map<std::string, int> ranks;
+// The owner whose order key sorts first runs first (outermost). The host ("") is always innermost, next to the
+// game's code; an owner without a key comes just before it. Equal keys keep the order of installation.
+std::map<std::string, std::string> order_keys;
 
-int rank_of(const std::string &owner)
+// -1: a runs before b, 1: after, 0: same place
+int compare_order(const std::string &a, const std::string &b)
 {
-    if (owner.empty()) return INT_MAX;
-    auto it = ranks.find(owner);
-    return it == ranks.end() ? INT_MAX - 1 : it->second;
+    auto rank = [](const std::string &o) { return o.empty() ? 2 : order_keys.count(o) ? 0 : 1; };
+    int ra = rank(a), rb = rank(b);
+    if (ra != rb) return ra < rb ? -1 : 1;
+    if (ra != 0) return 0;
+    int c = order_keys[a].compare(order_keys[b]);
+    return c < 0 ? -1 : c > 0;
 }
 
 template <class L>
 std::size_t position(const std::vector<L> &links, const std::string &owner)
 {
-    int r = rank_of(owner);
     std::size_t i = 0;
-    while (i < links.size() && rank_of(links[i].owner) <= r) i++;
+    while (i < links.size() && compare_order(links[i].owner, owner) <= 0) i++;
     return i;
 }
 
@@ -146,11 +148,11 @@ void conflict(const char *fmt, ...)
     conflict_handler(text);
 }
 
-void set_rank(const char *owner, int rank)
+void set_order(const char *owner, const char *key)
 {
     if (!ready()) return;
     Lock lock;
-    ranks[owner] = rank;
+    order_keys[owner] = key;
 }
 
 bool hook(const char *owner, void *target, void *detour, void **original, const char *what)

@@ -69,6 +69,23 @@ struct sadkmod_api {
     bool (*patch)(const char *mod, std::uint32_t module, std::uintptr_t address, const std::uint8_t *expect,
                   const std::uint8_t *replace, std::size_t n, const char *what);
     bool (*write_slot)(const char *mod, void **slot, void *value, void **previous, const char *what);
+    // the host's mods (host.hpp), for a mod that manages others (e.g. one that downloads a match's server mods)
+    void (*list_mods)(void (*each)(const struct sadkmod_modinfo *mod, void *ctx), void *ctx);
+    bool (*add_mod)(const char *dir);            // a folder outside the scan (<game>\mods\.temp_x): listed, inactive
+    bool (*forget_mod)(const char *folder);      // an inactive mod leaves the list
+    bool (*activate_mod)(const char *folder);
+    int (*deactivate_mod)(const char *folder);   // 0 done, 1 busy (freed later), 2 not found, 3 not active
+    bool (*mod_hash)(const char *folder, char out[33]);
+};
+
+struct sadkmod_modinfo {
+    const char *folder;      // its folder name, e.g. "20_rules" or ".temp_20_rules"; identifies it
+    const char *name;        // the same without ".temp_"
+    const char *dir;         // full path
+    std::uint32_t version;   // sadkmod_version(); 0 without mod.dll
+    std::uint32_t flags;     // SADKMOD_CLIENT | SADKMOD_SERVER | SADKMOD_LOBBY
+    bool active;
+    bool pending_free;       // unloaded, its mod.dll not freed yet
 };
 
 typedef bool (*sadkmod_init_fn)(const sadkmod_api *api);

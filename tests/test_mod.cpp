@@ -16,4 +16,12 @@ static bool start()
                                "test_target x2");
 }
 
+static void stop()
+{
+    using stopped_fn = void(SADK_CDECL *)();
+    if (auto f = reinterpret_cast<stopped_fn>(reinterpret_cast<void *>(GetProcAddress(GetModuleHandleA(nullptr), "test_mod_stopped"))))
+        f();
+}
+
 SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)
+SADKMOD_STOP(stop)
