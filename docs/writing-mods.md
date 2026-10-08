@@ -13,6 +13,7 @@ This folder holds the repo's own mods:
 | `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig, whose "Disable billboards" is `Enabled` in the mod's `billboards.ini`. `docs/BINARY_PATCHES.md`, "Billboards". |
 | `borderless` | The game's fullscreen becomes a borderless window over one monitor (`borderless.ini`: `Monitor`), the picture at the resolution set in the game's options, stretched. The game's own settings are untouched. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
 | `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer, and the lobby town flickers with it (maintainer's test, 2026-10-08; cause unknown, not pursued): a tool for model makers, not for playing. |
+| `cheatstart` | **Test only.** Every player's starting headquarters gets 1000 of each good of their tribe and 99 of each soldier type and level, on top of the map's starting goods (hook on `NVillage::Depot::AddInitialStock`; maps carry their own starting goods, so `tribes.lua` would not reach them). Amounts in `cheatstart.ini`. A server mod: the host's copy, ini included, runs for everyone. |
 | `propreload` | **Test only.** Reloads the property database (`scripts\properties\*.lua`) every time a match is entered, with the game's own functions, to find out whether that is safe between matches (`docs/data-loading.md` §1). Logs the record counts before and after. |
 | `foresterfix` | **Server mod**, data only. The forester no longer crashes the game when it plants a tree on volcanic ground: the volcanic patterns get Bavarian trees, as in PiotrWieczorek's fix, through its own property script `foresterfix.lua` instead of a replaced `patterns.lua` (`foresterfix/README.md`). |
 | `navalcombatfix` | **Server mod** (every player of a match needs it). Soldiers cross the water through their own player's harbours, for attacks (also from a colony) and defence, with the game's own soldier counts; a ship picks up soldiers left with nowhere to go behind a harbour that turned neutral (`navalcombatfix/CONCEPT.md`, `docs/navy-and-military.md` §7). A naval invasion ("Prepare naval invasion" on the buoy) takes a free harbour where no colony fits. `navalcombatfix.ini` switches each rule; see `navalcombatfix/README.md`. Not tested in the game yet. |
@@ -48,8 +49,11 @@ Paths are matched case-insensitively, whatever form the game uses (relative or a
 - **Meshes.** The game caches converted meshes as `%LOCALAPPDATA%\SAdK\<mesh>.mshraw`. The cache of a mesh a mod
   replaces goes to `%LOCALAPPDATA%\SAdK\mods\` instead, so the game's own cache is never overwritten and removing
   the mod goes back to the original model.
-- **New files** are found by name (existence checks and opens go through `CreateFile`). A file the game would only
-  find by listing a folder (`FindFirstFile`) is not listed. [TODO: no such case is known yet]
+- **New files.** The game opens a `[data]\...` file by looking its name up in the index it scanned at start-up
+  (`FileScanHolder::ResolvePath` `006e3fd0`); a file only a mod has is not in it, and the game would get no path at
+  all. The host hooks that lookup: for such a file it gives the file's place below `data\game\` (else
+  `data\lobby\`) when a mod has it, and the `CreateFile` redirect serves it. A file the game would only find by
+  listing a folder (`FindFirstFile`) is still not listed. [TODO: no such case is known yet]
 - **Property scripts.** A `.lua` a mod adds to `data\game\scripts\properties\` (one the game does not have) runs right
   after the game's own property scripts, at start-up and whenever the property database is filled again: mods in load
   order, a mod's scripts in name order. The game itself runs only `data.lua`, which loads the others by name, so the
