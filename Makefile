@@ -4,7 +4,7 @@
 # A mod compiles with -I<sadkmod>/include -I<sadkmod>/build/include and links build/libsadkmod.a.
 SADKMOD = .
 include pch.mk
-MAKEFLAGS += -j$(shell nproc)
+MAKEFLAGS += -j$(SADKMOD_JOBS)
 CXX = i686-w64-mingw32-g++
 CC = i686-w64-mingw32-gcc
 AR = i686-w64-mingw32-ar
@@ -35,11 +35,11 @@ $(SADKMOD_PCH): pch/sadkmod_pch.hpp
 	cp $< $@
 
 $(SADKMOD_PCH_GCH): $(SADKMOD_PCH) $(wildcard include/sadkmod/*.hpp) $(GENERATED)
-	$(CXX) $(CXXFLAGS) -x c++-header -o $@ $<
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) -x c++-header -o $@.tmp $< && mv $@.tmp $@
 
 build/obj/%.o: src/%.cpp $(wildcard include/sadkmod/*.hpp) $(GENERATED) $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
 
 build/obj/minhook/%.o: third_party/minhook/src/%.c
 	@mkdir -p $(dir $@)
@@ -52,16 +52,16 @@ build/libsadkmod.a: $(OBJ)
 TESTS = build/tests/test_sadkmod.exe
 build/tests/%.exe: tests/%.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
 build/tests/test_mod.dll: tests/test_mod.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -shared -static-libgcc -static-libstdc++ -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -shared -static-libgcc -static-libstdc++ -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
 # The host test runs from a scratch game folder: build/hostroot/bin/test_host.exe
 build/tests/test_host.exe: tests/test_host.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
 test: $(TESTS) build/tests/test_host.exe build/tests/test_mod.dll
 	WINEDEBUG=-all wine build/tests/test_sadkmod.exe "$(SADK_EXE)"

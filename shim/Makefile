@@ -20,7 +20,7 @@ $(LIB) $(GENERATED) $(SADKMOD_PCH_GCH): FORCE
 
 build/%.o: %.cpp shim.hpp ordinals.h $(GENERATED) $(SADKMOD_PCH_GCH)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
+	$(SADKMOD_LIMIT) $(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
 
 thunks.S wsock32.def ordinals.h &: exports.txt gen.py
 	python3 gen.py
