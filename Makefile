@@ -5,7 +5,8 @@
 CXX = i686-w64-mingw32-g++
 CC = i686-w64-mingw32-gcc
 AR = i686-w64-mingw32-ar
-CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -Iinclude -Ibuild/include -Ithird_party/minhook/include
+CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -Iinclude -Ibuild/include -Ithird_party/minhook/include \
+           -Ithird_party/minhook/src
 CFLAGS = -O2 -Ithird_party/minhook/include
 SOURCEMAP = ../sourcemap
 SADK_EXE ?= $(HOME)/sadk_game/bin/SADK.exe

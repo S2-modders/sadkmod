@@ -53,13 +53,18 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | Header | What |
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
-| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
+| `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
+| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
+| `events.hpp` | game events, hooked once by the host and dispatched in load order: `on_frame`, `on_match_enter` (before a match's world is built), `on_match_leave`, `on_session_end` (a network session ends), `on_net_event` (every match-network event); `post(fn)` runs `fn` on the main thread at the next frame, from any thread |
+| `calls.hpp` | `calls(where, what)`: every call from one game function to another, as static addresses, found by decoding `where`'s code (the map's body ranges) in the module's file; `patch_calls(where, what, detour, label, expected)` redirects them all |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
-| `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
+| `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::owned_string` (text on the game's heap, freed when it goes: for strings the game fills in or keeps), `msvc::vector<T>`, `msvc::list<T>` |
+| `ui.hpp` | `ui::room_message(text)`: a line in the pre-game room's chat |
+| `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_server_mods` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
-| `mod.hpp` | the mod interface: `sadkmod_api`, `SADKMOD_MAIN`, `mod_name()` / `mod_dir()`; in a mod, `log` and hooks go to the host |
-| `host.hpp` | the mod host: `start_mods()` (index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading) |
+| `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
+| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
 
@@ -71,6 +76,8 @@ changes). Namespaces: `sadk::game` for types, `sadk::game::fn` for functions, `s
 each followed by the Ghidra namespace or category. For example `S2CE::CTexture::CreateFromFile` becomes
 `sadk::game::fn::S2CE::CTexture::CreateFromFile`, and the struct is `sadk::game::S2CE::CTexture`.
 
+- **Bodies**: every function of the map carries its code ranges (`Body<n>{{start, end, …}}`, from Ghidra; switch
+  tables are data and lie outside), which `calls.hpp` decodes.
 - **Callable** (`Fn<…>`): named functions whose signature was set by hand or imported in Ghidra, with a
   known calling convention and no struct returned by value. A custom-storage `this` in ECX with stack
   parameters counts as thiscall. Other named functions are **address only** (`Addr<…>`), and the comment
@@ -135,13 +142,12 @@ runtime dependencies).
 ## Status
 
 - Library: the self-test passes under Wine (`make test`: string layouts, MinHook through `Hook<>`, table
-  slots, patches, verify mode against the DRM-free `SADK.exe`). All generated headers compile with every
-  layout check passing.
-- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (two mods overriding the same
-  file, a switched-off mod, `CreateFileA`/`W` redirects, writes left alone, the mesh-cache redirect, a test
-  `mod.dll` chaining a hook onto the host's).
-- The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' patches and hook
-  targets verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
+  slots, patches, verify mode against the DRM-free `SADK.exe`, the registry: three owners chained on one function
+  installed out of order and run in load order, one removed from the middle, chained table slots, patches undone,
+  overlapping patches reported as a conflict). All generated headers compile with every layout check passing.
+- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`mods/README.md`, "Status").
+- The shim on sadkmod (proxy and mod host); the mods' patches and hook targets (map sharing's 9 patches among them)
+  verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
   repo's mods work.
 
 ## Third-party

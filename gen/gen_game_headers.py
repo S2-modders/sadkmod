@@ -536,6 +536,10 @@ class Program:
                 if plate:
                     doc += f"\n// {plate}"
                 label = cstr(f"{f['ns']}::{f['name']}" if f["ns"] else f["name"])
+                body = f.get("body") or []   # [start, end) ranges of its code (sadk::calls)
+                if body:
+                    nums = ", ".join(f"0x{v}" for r in body for v in r)
+                    label += f", ::sadk::Body<{len(body)}>{{{{{nums}}}}}"
                 if why is None:
                     line = f"{doc}\ninline constexpr ::sadk::Fn<{mod}, {addr}, {self.fn_pointer(f)}, {label}> {n}{{}};"
                 else:

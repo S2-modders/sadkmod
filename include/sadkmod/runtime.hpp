@@ -32,7 +32,8 @@ struct Ini {
     bool get_bool(const char *section, const char *key, bool fallback) const;                // true/yes/1
 };
 
-// In a mod: its settings file, <mods>\<name>\<name>.ini (e.g. mods\billboards\billboards.ini). Outside a mod: an
+// In a mod: its settings file, <mods>\<folder>\<name>.ini (e.g. mods\billboards\billboards.ini; a downloaded
+// mods\.temp_<name> keeps <name>.ini). Outside a mod: an
 // Ini without a file, so every get() returns its fallback.
 Ini mod_settings();
 

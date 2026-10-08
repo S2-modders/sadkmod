@@ -150,7 +150,10 @@ const char *mod_name() { return bound_host ? bound_host->mod_name : ""; }
 const char *mod_dir() { return bound_host ? bound_host->mod_dir : ""; }
 Ini mod_settings()
 {
-    return Ini(bound_host ? std::string(bound_host->mod_dir) + "\\" + bound_host->mod_name + ".ini" : std::string());
+    if (!bound_host) return Ini(std::string());
+    std::string name = bound_host->mod_name;   // a downloaded mod's folder is .temp_<name>; its file stays <name>.ini
+    if (name.compare(0, 6, ".temp_") == 0) name.erase(0, 6);
+    return Ini(std::string(bound_host->mod_dir) + "\\" + name + ".ini");
 }
 
 // ── Game heap ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -173,6 +176,25 @@ string string::small(std::string_view text)
     s.size = static_cast<std::uint32_t>(n);
     s.capacity = 15;
     return s;
+}
+
+owned_string::owned_string(std::string_view text) : string(small(""))
+{
+    if (text.size() < 16) {
+        static_cast<string &>(*this) = small(text);
+        return;
+    }
+    auto *p = static_cast<char *>(game_malloc(text.size() + 1));
+    std::memcpy(p, text.data(), text.size());
+    p[text.size()] = 0;
+    heap_text = p;
+    size = static_cast<std::uint32_t>(text.size());
+    capacity = static_cast<std::uint32_t>(text.size());
+}
+
+owned_string::~owned_string()
+{
+    if (!is_inline() && heap_text) game_free(heap_text);
 }
 
 string string::borrow(const char *text, std::size_t length)

@@ -38,22 +38,39 @@ struct Name {
     constexpr Name(const char (&s)[N]) { for (std::size_t i = 0; i < N; i++) text[i] = s[i]; }
 };
 
-// A plain address with no type: code locations, data without a known type, patch sites.
-template <Module M, std::uintptr_t A, Name N = "">
+// A function's code as the Ghidra map has it: N ranges [start, end) of static addresses. Switch tables are data
+// and lie outside them, so the ranges can be decoded instruction by instruction (calls.hpp). Body<0>: not known.
+template <std::size_t N>
+struct Body {
+    std::uintptr_t ranges[2 * N];
+    static constexpr std::size_t size = N;
+    constexpr const std::uintptr_t *data() const { return ranges; }
+};
+template <>
+struct Body<0> {
+    static constexpr std::size_t size = 0;
+    constexpr const std::uintptr_t *data() const { return nullptr; }
+};
+
+// A plain address with no type: code locations, data without a known type, patch sites. For a function of the map,
+// B is its body.
+template <Module M, std::uintptr_t A, Name N = "", auto B = Body<0>{}>
 struct Addr {
     static constexpr Module module = M;
     static constexpr std::uintptr_t address = A;
     static constexpr const char *name = N.text;
+    static constexpr auto body = B;
     std::uintptr_t get() const { return resolve(M, A); }
 };
 
-// A game function. P is its function pointer type, calling convention included.
-template <Module M, std::uintptr_t A, class P, Name N = "">
+// A game function. P is its function pointer type, calling convention included; B its body (calls.hpp).
+template <Module M, std::uintptr_t A, class P, Name N = "", auto B = Body<0>{}>
 struct Fn {
     using pointer = P;
     static constexpr Module module = M;
     static constexpr std::uintptr_t address = A;
     static constexpr const char *name = N.text;
+    static constexpr auto body = B;
     P get() const { return reinterpret_cast<P>(resolve(M, A)); }
     template <class... X>
     decltype(auto) operator()(X &&...x) const { return get()(static_cast<X &&>(x)...); }
