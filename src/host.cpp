@@ -4,6 +4,7 @@
 #include <sadkmod/game/sadk_noav/fn/NProperties.hpp>
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
 #include <sadkmod/game/sadk_noav/fn/ai.hpp>
+#include <sadkmod/game/sadk_noav/fn/std_.hpp>
 #include <sadkmod/hook.hpp>
 #include <sadkmod/events.hpp>
 #include <sadkmod/host.hpp>
@@ -228,10 +229,52 @@ HANDLE WINAPI create_file_a(LPCSTR name, DWORD access, DWORD share, LPSECURITY_A
 using Decrypt = Hook<game::fn::NBase::gDecryptData>;
 const unsigned char sadk_magic[8] = {0x12, 0x18, 0x09, 0x06, 's', 'a', 'd', 'k'};
 
+// A file that could not be read (NBase::gReadFileData S 006e6d40 leaves the buffer null, after logging "Can't open
+// file") would make gDecryptData read its header from address 4: it stays null for the caller instead.
 void SADK_CDECL decrypt_or_pass(void *file_name, void **data, std::uint32_t *size)
 {
+    if (data && !*data) {
+        auto *name = static_cast<msvc::string *>(file_name);
+        log("mods: %.*s could not be read", static_cast<int>(name->size), name->data());
+        return;
+    }
     if (data && *data && size && (*size < 8 || std::memcmp(*data, sadk_magic, 8) != 0)) return;
     Decrypt::original(file_name, data, size);
+}
+
+// The game finds a file by its name in the index it scans at start-up (FileScanHolder::ResolvePath S 006e3fd0 ->
+// FileScan::ResolvePath S 006ef8a0, which ignores the directory) and opens the path that index gives. A file that
+// exists only in a mod is not in that index: the game gets "" and cannot open it. For such a file the path below the
+// data root is looked up in the mods' index instead (game\ first, then lobby\, as the game's two roots), and the
+// game gets the file's place in the data folder, which the CreateFile redirect then serves from the mod.
+using ResolvePath = Hook<game::fn::ai::file::FileScanHolder::ResolvePath>;
+
+void SADK_THISCALL resolve_path(game::ai::file::FileScanHolder *holder, msvc::string *path, msvc::string *out)
+{
+    ResolvePath::original(holder, path, out);
+    if (out->size || !path->size) return;
+    std::string_view request = path->view();
+    char last = request.back();
+    if (last == '\\' || last == '/' || request.find(':') != std::string_view::npos) return;   // the game's cases
+    const Index *ix = current.load();
+    if (!ix || ix->files.empty()) return;
+    std::wstring rel = lower(widen(std::string(request).c_str()));
+    std::replace(rel.begin(), rel.end(), L'/', L'\\');
+    std::vector<std::wstring> keys;
+    if (std::size_t at = rel.find(L"[data]\\"); at != std::wstring::npos) {
+        rel = rel.substr(at + 7);
+        keys = {L"game\\" + rel, L"lobby\\" + rel};
+    } else if (rel.compare(0, 5, L"data\\") == 0) {
+        keys = {rel.substr(5)};
+    } else {
+        keys = {L"game\\" + rel, L"lobby\\" + rel};
+    }
+    for (auto &key : keys) {
+        if (!ix->files.count(key)) continue;
+        std::string to = narrow(data_prefix + key);
+        game::fn::std_::string::assign(out, to.data(), static_cast<std::uint32_t>(to.size()));
+        return;
+    }
 }
 
 void install_file_hooks()
@@ -250,6 +293,7 @@ void install_file_hooks()
                             reinterpret_cast<void *>(create_file_a), reinterpret_cast<void **>(&real_create_file_a),
                             "mod files (CreateFileA)");
     ok = Decrypt::install(decrypt_or_pass, "mod files: plain files pass gDecryptData") && ok;
+    ok = ResolvePath::install(resolve_path, "mod files: files only a mod has are found") && ok;
     log("mods: file redirect %s", ok ? "installed" : "- A HOOK FAILED, see above");
 }
 
