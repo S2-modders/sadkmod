@@ -53,8 +53,11 @@ Ghidra's own behaviour: about 450 functions have no name in the original, only a
 
 ## Regenerating
 
-`mapping/scripts/ExportSourcemap.java` writes `types.gdt` and `sourcemap.json.gz` from the project's Ghidra database (via the
-Ghidra MCP: `run_ghidra_script ExportSourcemap.java` with `program=sadk_noav.exe`, then `tincat3.dll`).
+`ExportSourcemap.java` (in this folder) writes `types.gdt` and `sourcemap.json.gz` from the project's Ghidra database:
+inside Ghidra with this folder as its argument (default `~/projects/sadk-resurrected/sourcemap`), e.g. through the
+Ghidra MCP: `run_ghidra_script ExportSourcemap.java` with `program=sadk_noav.exe`, then `tincat3.dll` (the MCP finds
+scripts in `~/ghidra_scripts`: link or copy it there). Besides names and signatures it exports each function's code
+ranges (`body`: `[start, end)` pairs), from which sadkmod's `sadk::calls` finds call sites.
 Then `ExportTypesJson.java` (in this folder) writes `types.json.gz` from `types.gdt`. It runs inside Ghidra:
 through the MCP, or headless with any small PE as the throwaway import:
 

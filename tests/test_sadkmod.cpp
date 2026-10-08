@@ -2,13 +2,18 @@
 // Without the game: msvc layouts, patches and MinHook hooks on functions of this program.
 // With SADK.exe: the generated declarations against the real binary, in verify mode (nothing is executed).
 #include <sadkmod/game/sadk_noav/fn/S2CE.hpp>
+#include <sadkmod/game/sadk_noav/fn/LobbyMenu.hpp>
+#include <sadkmod/game/sadk_noav/fn/NComm_Manager.hpp>
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
+#include <sadkmod/game/sadk_noav/fn/ai.hpp>
 #include <sadkmod/sadkmod.hpp>
 
 #include <windows.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 static int failures, checks;
 #define CHECK(cond)                                                                    \
@@ -208,6 +213,21 @@ static void test_game(const char *exe)
     CHECK(p == image.bytes.data() + (0x004e80d0 - 0x400000));
     CHECK(fn::_free.address == 0x006f23fe && fn::_malloc.address == 0x006f3ada);
     CHECK(std::strcmp(fn::S2CE::CTexture::CreateFromFile.name, "S2CE::CTexture::CreateFromFile") == 0);
+    // sadk::calls: the call sites assetshare used to patch by address, found from the bodies in the map
+    using V = std::vector<std::uintptr_t>;
+    CHECK(sadk::calls(fn::S2Tftp_Session_ReadNextBlock, fn::_fopen_s) == V{0x00426b14});
+    CHECK(sadk::calls(fn::ai::net::S2TftpSession::CloseFile, fn::_rename) == (V{0x00427b29, 0x00427b7e}));
+    CHECK(sadk::calls(fn::S2Tftp_Session_WriteBlock, fn::S2Tftp_OpenTempFile) == V{0x00426ca5});
+    CHECK(sadk::calls(fn::S2Tftp_Session_WriteBlock, fn::_fwrite) == V{0x00426d14});
+    CHECK(sadk::calls(fn::LobbyMenu::SelectMapDialog::RefreshMapList, fn::SelectMapDialog_AppendMapFiles) == V{0x0045a381});
+    CHECK(sadk::calls(fn::LobbyMenu::SetupGameDialog::HandleButtonClicks, fn::NComm_Manager::SendPlayerReadyEvent) ==
+          V{0x00457f51});
+    auto removes = sadk::calls(fn::ai::net::S2TftpSession::CloseFile, fn::_remove);   // through the CRT jump thunk
+    CHECK(std::find(removes.begin(), removes.end(), 0x00427a08) != removes.end());
+    CHECK(sadk::call_target(sadk::Module::sadk, 0x00427a08) == 0x006f6789);          // the thunk itself
+    auto requests = sadk::calls(fn::NComm_Manager::HandleEvent, fn::NComm_Manager::RequestFileFromHost);
+    CHECK(requests == (V{0x0040f256, 0x0040f30d}));                                 // across HandleEvent's 2 ranges
+    for (auto r : removes) std::printf("CloseFile calls _remove at %08x\n", unsigned(r));
     sadk::verify_with(sadk::Module::sadk, nullptr);
     auto n = sadk::verify_counts();
     CHECK(n.matched == 2 && n.mismatched == 1);

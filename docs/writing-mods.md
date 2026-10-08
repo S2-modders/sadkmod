@@ -87,6 +87,9 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   leads through the later ones to the game, however late each mod installs its hook (`10_first`, `20_second`: the
   folder name decides). The shim's own hooks always come last, next to the game's code. Table slots
   (`sadk::hook_slot`) are ordered the same way.
+- **One call inside one function:** `sadk::patch_calls(fn::Where, fn::What, (void *)detour, "label", 1)` redirects
+  every call from `Where` to `What` (here: exactly one), found in the game binary (`sadkmod/include/sadkmod/calls.hpp`);
+  `sadk::calls(fn::Where, fn::What)` lists them. No call-site address to look up by hand.
 - **Patches:** `sadk::patch` changes bytes directly and checks what it replaces. One patch per address: a patch over
   bytes another one already changed is a conflict (see "Layout in the game folder").
 - **Version and flags:** `SADKMOD_MAIN(start, version, flags)` also exports `sadkmod_version()` (the mod's own version,

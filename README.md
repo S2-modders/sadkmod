@@ -55,6 +55,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
 | `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
 | `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
+| `calls.hpp` | `calls(where, what)`: every call from one game function to another, as static addresses, found by decoding `where`'s code (the map's body ranges) in the module's file; `patch_calls(where, what, detour, label, expected)` redirects them all |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
@@ -72,6 +73,8 @@ changes). Namespaces: `sadk::game` for types, `sadk::game::fn` for functions, `s
 each followed by the Ghidra namespace or category. For example `S2CE::CTexture::CreateFromFile` becomes
 `sadk::game::fn::S2CE::CTexture::CreateFromFile`, and the struct is `sadk::game::S2CE::CTexture`.
 
+- **Bodies**: every function of the map carries its code ranges (`Body<n>{{start, end, …}}`, from Ghidra; switch
+  tables are data and lie outside), which `calls.hpp` decodes.
 - **Callable** (`Fn<…>`): named functions whose signature was set by hand or imported in Ghidra, with a
   known calling convention and no struct returned by value. A custom-storage `this` in ECX with stack
   parameters counts as thiscall. Other named functions are **address only** (`Addr<…>`), and the comment

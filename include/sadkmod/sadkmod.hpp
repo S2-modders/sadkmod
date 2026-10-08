@@ -10,3 +10,4 @@
 #include "registry.hpp"
 #include "runtime.hpp"
 #include "verify.hpp"
+#include "calls.hpp"
