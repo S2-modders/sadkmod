@@ -63,7 +63,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_server_mods` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
-| `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
+| `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)` and `SADKMOD_STOP` (in `entry.hpp`), the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
 | `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, lookup of files only a mod has, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it, the property scripts mods add (run after the game's `data.lua`), " (modded)" in the hosted game's name |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
@@ -138,6 +138,13 @@ make test       # self-test under Wine; with SADK_EXE=<DRM-free SADK.exe> also a
 A mod compiles with `-std=c++23 -fno-exceptions -fno-rtti -I<sadkmod>/include -I<sadkmod>/build/include`
 and links `<sadkmod>/build/libsadkmod.a` (add `-static-libgcc -static-libstdc++` for a DLL without
 runtime dependencies).
+
+**Precompiled header.** The generated game declarations are about 320,000 lines; parsing them took about 10 s per
+source file. `make` builds them once into `build/pch/sadkmod_pch.hpp.gch` (about 20 s, again only after the
+declarations are regenerated; never committed: `build/`). sadkmod, the shim and the mods include `pch.mk`, compile
+with its shared flags and `-include` the header, so a source file compiles in about a second. `entry.hpp`
+(`SADKMOD_MAIN`, reading `SADKMOD_NO_ENTRY`) stays out of it: GCC rejects a precompiled header when a macro it looked
+at is defined differently, and `mods/`'s verify build defines that one. The builds run in parallel (`-j<cores>`).
 
 ## Status
 

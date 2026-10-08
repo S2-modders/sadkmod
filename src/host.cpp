@@ -183,7 +183,7 @@ int rebuild_index()
 {
     auto ix = std::make_unique<Index>();
     for (auto &m : all)
-        if (m->active) add_files(*ix, m->wdir + L"\\data", L"", m->folder, (m->flags & SADKMOD_SERVER) != 0);
+        if (m->active) add_files(*ix, m->wdir + L"\\data", std::wstring{}, m->folder, (m->flags & SADKMOD_SERVER) != 0);
     int n = static_cast<int>(ix->files.size());
     const Index *old = current.load();
     if (property_files(old) != property_files(ix.get())) properties_dirty = true;
@@ -931,7 +931,7 @@ std::string content_hash(const char *folder)
         std::wstring rel = todo.back();
         todo.pop_back();
         WIN32_FIND_DATAW fd;
-        HANDLE h = FindFirstFileW((dir + (rel.empty() ? L"" : L"\\" + rel) + L"\\*").c_str(), &fd);
+        HANDLE h = FindFirstFileW((dir + (rel.empty() ? std::wstring{} : L"\\" + rel) + L"\\*").c_str(), &fd);
         if (h == INVALID_HANDLE_VALUE) continue;
         do {
             if (!std::wcscmp(fd.cFileName, L".") || !std::wcscmp(fd.cFileName, L"..")) continue;

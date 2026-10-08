@@ -4,6 +4,7 @@
 #include "core.hpp"
 #include "hook.hpp"
 #include "host.hpp"
+#include "entry.hpp"
 #include "mod.hpp"
 #include "msvc.hpp"
 #include "patch.hpp"

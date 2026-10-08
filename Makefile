@@ -2,11 +2,13 @@
 #   make            build/libsadkmod.a and build/include/sadkmod/game/...
 #   make test       build the tests and run them under Wine (needs a DRM-free SADK.exe: SADK_EXE=<path>)
 # A mod compiles with -I<sadkmod>/include -I<sadkmod>/build/include and links build/libsadkmod.a.
+SADKMOD = .
+include pch.mk
+MAKEFLAGS += -j$(shell nproc)
 CXX = i686-w64-mingw32-g++
 CC = i686-w64-mingw32-gcc
 AR = i686-w64-mingw32-ar
-CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -Iinclude -Ibuild/include -Ithird_party/minhook/include \
-           -Ithird_party/minhook/src
+CXXFLAGS = $(SADKMOD_CXXFLAGS) -Iinclude -Ibuild/include -Ithird_party/minhook/include -Ithird_party/minhook/src
 CFLAGS = -O2 -Ithird_party/minhook/include
 SOURCEMAP = ../sourcemap
 SADK_EXE ?= $(HOME)/sadk_game/bin/SADK.exe
@@ -17,7 +19,7 @@ MINHOOK = third_party/minhook/src/hook.c third_party/minhook/src/buffer.c \
 OBJ = $(SRC:src/%.cpp=build/obj/%.o) $(MINHOOK:third_party/minhook/src/%.c=build/obj/minhook/%.o)
 GENERATED = build/include/.generated
 
-all: build/libsadkmod.a
+all: build/libsadkmod.a $(SADKMOD_PCH_GCH)
 
 build/macros.txt: gen/macro_headers.hpp
 	@mkdir -p build
@@ -27,9 +29,17 @@ $(GENERATED): gen/gen_game_headers.py build/macros.txt $(wildcard $(SOURCEMAP)/*
 	python3 gen/gen_game_headers.py $(SOURCEMAP) build/include --macros build/macros.txt
 	touch $@
 
-build/obj/%.o: src/%.cpp $(wildcard include/sadkmod/*.hpp) $(GENERATED)
+# The precompiled header (pch.mk): copied into build/pch/ so that its .gch sits next to it, where GCC looks.
+$(SADKMOD_PCH): pch/sadkmod_pch.hpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	cp $< $@
+
+$(SADKMOD_PCH_GCH): $(SADKMOD_PCH) $(wildcard include/sadkmod/*.hpp) $(GENERATED)
+	$(CXX) $(CXXFLAGS) -x c++-header -o $@ $<
+
+build/obj/%.o: src/%.cpp $(wildcard include/sadkmod/*.hpp) $(GENERATED) $(SADKMOD_PCH_GCH)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
 
 build/obj/minhook/%.o: third_party/minhook/src/%.c
 	@mkdir -p $(dir $@)
@@ -40,18 +50,18 @@ build/libsadkmod.a: $(OBJ)
 	$(AR) rcs $@ $^
 
 TESTS = build/tests/test_sadkmod.exe
-build/tests/%.exe: tests/%.cpp build/libsadkmod.a
+build/tests/%.exe: tests/%.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
-build/tests/test_mod.dll: tests/test_mod.cpp build/libsadkmod.a
+build/tests/test_mod.dll: tests/test_mod.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -shared -static-libgcc -static-libstdc++ -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -shared -static-libgcc -static-libstdc++ -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
 # The host test runs from a scratch game folder: build/hostroot/bin/test_host.exe
-build/tests/test_host.exe: tests/test_host.cpp build/libsadkmod.a
+build/tests/test_host.exe: tests/test_host.cpp build/libsadkmod.a $(SADKMOD_PCH_GCH)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
+	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -static -o $@ $< build/libsadkmod.a -ladvapi32 -lshell32 -luser32
 
 test: $(TESTS) build/tests/test_host.exe build/tests/test_mod.dll
 	WINEDEBUG=-all wine build/tests/test_sadkmod.exe "$(SADK_EXE)"

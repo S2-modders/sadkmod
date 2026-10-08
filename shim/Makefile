@@ -3,7 +3,8 @@
 #   make test     loads it into a test program under Wine: forwarding, inactive outside SADK.exe
 CXX = i686-w64-mingw32-g++
 SADKMOD = ../../sadkmod
-CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -I. -I$(SADKMOD)/include -I$(SADKMOD)/build/include
+include $(SADKMOD)/pch.mk
+CXXFLAGS = $(SADKMOD_CXXFLAGS) -I. -I$(SADKMOD)/include -I$(SADKMOD)/build/include
 LIBS = $(SADKMOD)/build/libsadkmod.a -lkernel32 -ladvapi32 -lshell32 -luser32
 OBJ = build/main.o
 
@@ -14,12 +15,12 @@ wsock32.dll: $(OBJ) thunks.S wsock32.def $(LIB)
 	$(CXX) -O2 -shared -s -static-libgcc -static-libstdc++ -o $@ $(OBJ) thunks.S wsock32.def $(LIBS)
 
 # sadkmod's own make decides what is out of date; the shim relinks only when the library file changed
-$(LIB) $(GENERATED): FORCE
+$(LIB) $(GENERATED) $(SADKMOD_PCH_GCH): FORCE
 	$(MAKE) -C $(SADKMOD)
 
-build/%.o: %.cpp shim.hpp ordinals.h $(GENERATED)
+build/%.o: %.cpp shim.hpp ordinals.h $(GENERATED) $(SADKMOD_PCH_GCH)
 	@mkdir -p build
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(SADKMOD_PCH_FLAGS) -c -o $@ $<
 
 thunks.S wsock32.def ordinals.h &: exports.txt gen.py
 	python3 gen.py
