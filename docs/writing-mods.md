@@ -1,6 +1,6 @@
 # Mods
 
-The bridge shim (`bin\wsock32.dll`) loads mods from the game's `mods` folder at start-up. A mod can replace or add
+The shim (`bin\wsock32.dll`) loads mods from the game's `mods` folder at start-up. A mod can replace or add
 game data files, and it can bring code (`mod.dll`) that patches and hooks the game through `sadkmod`. Like the
 shim, mods only run on the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`).
 
@@ -8,6 +8,8 @@ This folder holds the repo's own mods:
 
 | Mod | What it does |
 |---|---|
+| `gamehostbridge` | Hosting from behind NAT, through the lobby server (`docs/bridge-protocol.md`): hooks the shim's `connect` / `send` / `listen` / `closesocket`, which carry all of TinCat's traffic. `gamehostbridge.ini`: `[Bridge] ForceBridge` (always host through the bridge), `Port` (the server's bridge port, default 7072). Installed by SAdK-ServerConfig. |
+| `assetshare` | Map sharing: a joiner downloads a map the host has from the host, custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps` (false: refuse downloads; the game tells the host with its own TFTP write error). [TODO: the host's server mods, and `AcceptServerMods`] Installed by SAdK-ServerConfig. |
 | `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig, whose "Disable billboards" is `Enabled` in the mod's `billboards.ini`. `docs/BINARY_PATCHES.md`, "Billboards". |
 | `borderless` | The game's fullscreen becomes a borderless window over one monitor (`borderless.ini`: `Monitor`), the picture at the resolution set in the game's options, stretched. The game's own settings are untouched. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
 | `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer, and the lobby town flickers with it (maintainer's test, 2026-10-08; cause unknown, not pursued): a tool for model makers, not for playing. |

@@ -154,6 +154,19 @@ static void test_registry()
     CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_one);
     CHECK(reg::remove_owner("b").slots == 1 && table2.get(nullptr) == 1);
 
+    // a 6-byte forwarding thunk, JMP DWORD PTR [slot], as the shim exports (gamehostbridge hooks those)
+    static void *slot = reinterpret_cast<void *>(chained);
+    auto *thunk = static_cast<std::uint8_t *>(VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    thunk[0] = 0xFF;
+    thunk[1] = 0x25;
+    void **at = &slot;
+    std::memcpy(thunk + 2, &at, 4);
+    std::memset(thunk + 6, 0xCC, 10);
+    volatile chained_fn via = reinterpret_cast<chained_fn>(thunk);
+    CHECK(via(1) == 2);
+    CHECK(reg::hook("a", thunk, (void *)add_ten, (void **)&orig_a, "thunk +10") && via(1) == 12 && call(1) == 2);
+    CHECK(reg::remove_owner("a").hooks == 1 && via(1) == 2);
+
     // patches: one per address (a second one, even the same, is a conflict naming both); undone; changed bytes are
     // left alone
     static std::uint8_t code[4] = {1, 2, 3, 4};

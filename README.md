@@ -140,8 +140,8 @@ runtime dependencies).
   installed out of order and run in load order, one removed from the middle, chained table slots, patches undone,
   overlapping patches reported as a conflict). All generated headers compile with every layout check passing.
 - Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`mods/README.md`, "Status").
-- The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' patches and hook
-  targets verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
+- The shim on sadkmod (proxy and mod host); the mods' patches and hook targets (map sharing's 9 patches among them)
+  verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
   repo's mods work.
 
 ## Third-party

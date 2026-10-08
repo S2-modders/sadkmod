@@ -478,6 +478,10 @@ std::unique_ptr<Mod> read_mod(const std::wstring &dir, const std::wstring &folde
     api->activate_mod = api_activate_mod;
     api->deactivate_mod = api_deactivate_mod;
     api->mod_hash = api_mod_hash;
+    HMODULE self = nullptr;   // the module this code is linked into: the host
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCSTR>(&add_mod), &self);
+    api->host_module = self;
     m->api = std::move(api);
     std::string what;
     for (auto [bit, word] : {std::pair{SADKMOD_CLIENT, "client"}, {SADKMOD_SERVER, "server"}, {SADKMOD_LOBBY, "lobby"}})

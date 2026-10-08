@@ -76,6 +76,7 @@ struct sadkmod_api {
     bool (*activate_mod)(const char *folder);
     int (*deactivate_mod)(const char *folder);   // 0 done, 1 busy (freed later), 2 not found, 3 not active
     bool (*mod_hash)(const char *folder, char out[33]);
+    void *host_module;   // the host's own DLL (the shim, <game>\bin\wsock32.dll): mods may hook its exports
 };
 
 struct sadkmod_modinfo {

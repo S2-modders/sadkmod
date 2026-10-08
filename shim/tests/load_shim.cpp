@@ -1,5 +1,5 @@
 // Loads wsock32.dll (the shim) into a program that is not SADK.exe and checks the pass-through: the forwarded
-// exports reach the system wsock32.dll, the hooked ones work, and the shim reports itself inactive.
+// exports reach the system wsock32.dll and the shim reports itself inactive.
 // load_shim.exe <path to the shim's wsock32.dll>
 #include <winsock2.h>
 #include <windows.h>
@@ -32,8 +32,8 @@ int main(int argc, char **argv)
     a.sin_port = htons_(1);                    // nothing listens on 127.0.0.1:1
     a.sin_addr.s_addr = 0x0100007f;
     int rc = connect_(s, reinterpret_cast<sockaddr *>(&a), sizeof a);
-    if (rc == 0) { std::printf("FAIL: connect (hooked) to a closed port succeeded\n"); failures++; }
-    if (close_(s) != 0) { std::printf("FAIL: closesocket (hooked)\n"); failures++; }
+    if (rc == 0) { std::printf("FAIL: connect (forwarded) to a closed port succeeded\n"); failures++; }
+    if (close_(s) != 0) { std::printf("FAIL: closesocket (forwarded)\n"); failures++; }
     Sleep(500);                                // the start-up thread writes the inactive line
     char log[MAX_PATH];
     GetModuleFileNameA(nullptr, log, MAX_PATH);
