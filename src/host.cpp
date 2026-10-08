@@ -256,7 +256,6 @@ void install_file_hooks()
 // Scene_CreateGlobal S 0067e800 runs once per match from nMenu::Game::OnEnter, before the world is built. Live
 // (offline, test mod propreload, 2026-10-08): two matches in a row, record counts identical to start-up.
 using SceneCreate = Hook<game::fn::Scene_CreateGlobal>;
-using run_script_fn = void(SADK_THISCALL *)(void *db, msvc::string *name);   // as Initialize calls it (S 00407799)
 
 void SADK_CDECL scene_create()
 {
@@ -266,7 +265,7 @@ void SADK_CDECL scene_create()
         game::fn::Properties_Db_ClearAll(db);
         game::fn::Properties_RegisterLuaLibrary(db);
         msvc::string name = msvc::string::small("data");
-        reinterpret_cast<run_script_fn>(reinterpret_cast<void *>(game::fn::Properties_RunPropertyScript.get()))(db, &name);
+        game::fn::ai::properties::PropertiesDb::RunPropertyScript(db, &name);
         log("mods: property database filled again for the active mods (%u buildings, %u goods)", db->buildingMapSize,
             db->goodMapSize);
     }
