@@ -128,8 +128,10 @@ A server mod changes what happens in a match, so every player of a match needs t
 set counts, and the assetshare mod makes it so:
 
 1. **Joining.** When the host's game information arrives, the joiner fetches the host's manifest: its active server
-   mods with name, version and content hash. A host kicks a joiner that has not asked for it within 20 s ("This game
-   needs the assetshare mod"): without assetshare a player would play with different rules.
+   mods with name, version and content hash. No manifest within 15 s (a host without assetshare, a vanilla game):
+   the host runs no server mods, so the joiner's own are switched off for this game. A host that runs server mods
+   kicks a joiner that has not asked for the manifest within 20 s ("This game needs the assetshare mod"): without
+   assetshare it would play with different rules. A host without server mods kicks nobody.
 2. **Your own mods first.** Your server mods that the host does not run, or runs in another version or content, are
    switched off for this game. Only then is anything activated, so nothing conflicts.
 3. **The host's mods.** Where you have the same mod (name, version and content hash), your copy is used. Every other
@@ -142,7 +144,9 @@ set counts, and the assetshare mod makes it so:
    are switched off and deleted and your own come back on. A `.temp_` folder left by a crash is deleted at the next
    start.
 
-What is transferred is one archive per mod or map file, compressed with LZMS when both sides run Windows 8 or later
+A map goes with the files of the same name next to it: `<map>.bin` (the map's environment data,
+`CEnviromentMgr::LoadMapEnvData`), `<map>.lua` (its script) and `<map>_<name>.lua` (its cutscene scripts). What is
+transferred is one archive per mod or map file, compressed with LZMS when both sides run Windows 8 or later
 (the Windows Compression API; stored otherwise), sent in 4 KB blocks whatever the host's connection type. The game's
 build checksum, which a joiner sends before anything can be transferred, leaves out server mods' files on both sides
 (`GameData_ComputeBuildChecksum`; `sadkmod_api::redirect_server_mods`): server mods are matched by name, version and
