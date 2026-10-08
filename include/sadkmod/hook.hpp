@@ -16,8 +16,8 @@
 //
 // The detour's type must match the declaration exactly (calling convention included), else it does not compile:
 // copy the parameter list from the declaration's comment. All hooks go through one registry per process; when
-// several mods hook the same function, the most recently installed detour runs first and its `original` leads
-// through the others to the game.
+// several mods hook the same function, the detours run in the mods' load order (folder-name order; registry.hpp)
+// and each one's `original` leads through the later ones to the game.
 //
 // hook_slot: replaces one entry of a vtable (or any table of function pointers) instead; only calls through that
 // table are affected.

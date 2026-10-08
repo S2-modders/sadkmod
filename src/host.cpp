@@ -194,6 +194,7 @@ Summary build_index(const char *root)
     std::sort(names.begin(), names.end(), [](const std::wstring &a, const std::wstring &b) { return lower(a) < lower(b); });
     for (auto &n : names) {
         ModInfo m{narrow(n), narrow(wroot + L"\\mods\\" + n), wroot + L"\\mods\\" + n};
+        registry::set_rank(m.name.c_str(), static_cast<int>(mods.size()));   // hooks run in folder-name order
         int files = add_files(m.wdir + L"\\data", L"", m.name);
         log("mods: %s (%d data file%s%s)", m.name.c_str(), files, files == 1 ? "" : "s",
             GetFileAttributesW((m.wdir + L"\\mod.dll").c_str()) != INVALID_FILE_ATTRIBUTES ? ", mod.dll" : "");

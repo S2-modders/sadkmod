@@ -5,6 +5,7 @@
 #include <MinHook.h>
 #include <windows.h>
 
+#include <climits>
 #include <cstring>
 #include <map>
 #include <string>
@@ -31,6 +32,27 @@ bool ready()
     return ok;
 }
 
+// ── Order ────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Lower rank runs first (outermost). The host ("") is always innermost, next to the game's code; an owner without
+// a rank comes just before it. Equal ranks keep the order of installation.
+std::map<std::string, int> ranks;
+
+int rank_of(const std::string &owner)
+{
+    if (owner.empty()) return INT_MAX;
+    auto it = ranks.find(owner);
+    return it == ranks.end() ? INT_MAX - 1 : it->second;
+}
+
+template <class L>
+std::size_t position(const std::vector<L> &links, const std::string &owner)
+{
+    int r = rank_of(owner);
+    std::size_t i = 0;
+    while (i < links.size() && rank_of(links[i].owner) <= r) i++;
+    return i;
+}
+
 // ── Hooks ────────────────────────────────────────────────────────────────────────────────────────────────────────
 struct Link {
     std::string owner, what;
@@ -43,7 +65,7 @@ struct Chain {
     void *volatile top = nullptr;   // where the stub jumps: the newest detour, or the trampoline
     void *trampoline = nullptr;     // MinHook's: the game's own code
     std::uint8_t *stub = nullptr;   // JMP [top]; the MinHook hook leads here
-    std::vector<Link> links;        // newest first
+    std::vector<Link> links;        // in call order: links[0] runs first
 };
 std::map<void *, Chain *> chains;
 
@@ -84,7 +106,7 @@ struct SlotLink {
 };
 struct Slot {
     void *base;                   // the entry before anyone changed it
-    std::vector<SlotLink> links;  // newest first
+    std::vector<SlotLink> links;  // in call order: links[0] is the entry in the table
 };
 std::map<void **, Slot> slots;
 
@@ -98,6 +120,13 @@ struct PatchRecord {
 std::vector<PatchRecord> patches;
 
 }  // namespace
+
+void set_rank(const char *owner, int rank)
+{
+    if (!ready()) return;
+    Lock lock;
+    ranks[owner] = rank;
+}
 
 bool hook(const char *owner, void *target, void *detour, void **original, const char *what)
 {
@@ -124,9 +153,13 @@ bool hook(const char *owner, void *target, void *detour, void **original, const 
         }
         c->top = c->trampoline;
     }
-    *original = c->links.empty() ? c->trampoline : c->links.front().detour;
-    c->links.insert(c->links.begin(), Link{owner, what, detour, original});
-    c->top = detour;
+    std::size_t i = position(c->links, owner);
+    *original = i < c->links.size() ? c->links[i].detour : c->trampoline;   // before anything leads to it
+    if (i == 0)
+        c->top = detour;
+    else
+        *c->links[i - 1].original = detour;
+    c->links.insert(c->links.begin() + static_cast<std::ptrdiff_t>(i), Link{owner, what, detour, original});
     if (first) {
         MH_STATUS st = MH_EnableHook(target);
         if (st != MH_OK) {
@@ -136,7 +169,7 @@ bool hook(const char *owner, void *target, void *detour, void **original, const 
             return false;
         }
     }
-    log("hook %s at %p: installed%s", what, target, c->links.size() > 1 ? " (chained before an earlier hook)" : "");
+    log("hook %s at %p: installed%s", what, target, c->links.size() > 1 ? " (in a chain, by load order)" : "");
     return true;
 }
 
@@ -163,10 +196,17 @@ bool write_slot(const char *owner, void **slot, void *value, void **previous, co
     auto [it, fresh] = slots.try_emplace(slot);
     Slot &s = it->second;
     if (fresh) s.base = *slot;
-    void *below = s.links.empty() ? s.base : s.links.front().value;
-    if (previous) *previous = below;
-    bool ok = write_memory(slot, &value, sizeof value);
-    if (ok) s.links.insert(s.links.begin(), SlotLink{owner, what, value, previous});
+    std::size_t i = position(s.links, owner);
+    if (previous) *previous = i < s.links.size() ? s.links[i].value : s.base;
+    bool ok = true;
+    if (i == 0)
+        ok = write_memory(slot, &value, sizeof value);
+    else if (s.links[i - 1].previous)
+        *s.links[i - 1].previous = value;
+    else
+        log("hook %s (table slot %p): the entry before it keeps no previous - it is never reached", what,
+            static_cast<void *>(slot));
+    if (ok) s.links.insert(s.links.begin() + static_cast<std::ptrdiff_t>(i), SlotLink{owner, what, value, previous});
     log("hook %s (table slot %p): %s", what, static_cast<void *>(slot), ok ? "installed" : "write failed");
     return ok;
 }

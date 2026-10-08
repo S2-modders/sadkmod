@@ -2,9 +2,14 @@
 // (a mod's name; "" for the host itself). It lives in the host; sadkmod's hook_function / hook_slot / patch go
 // here directly in the host and through sadkmod_api in a mod.
 //
-// Hooks: one MinHook hook per target, which jumps through a small stub to the newest detour. Every detour's
-// `original` leads to the next older one and the oldest to MinHook's trampoline (the game's code). Removing a
-// detour points the next newer one's `original` (or the stub) past it, so a mod in the middle of a chain can go.
+// Order: several detours on one target run in load order. Each owner has a rank (set_rank; the host gives every
+// mod its place in folder-name order): the lowest rank runs first and its `original` leads to the next. The host
+// itself ("") is always last, next to the game's code; an owner without a rank comes just before the host. Detours
+// of the same rank run in the order they were installed. So the order no longer depends on when a mod installs.
+//
+// Hooks: one MinHook hook per target, which jumps through a small stub to the first detour. Every detour's
+// `original` leads to the next one and the last to MinHook's trampoline (the game's code). Removing a detour points
+// the one before it (or the stub) past it, so a mod in the middle of a chain can go.
 // The MinHook hook itself stays in place once made: with no detour left the stub leads straight to the trampoline.
 // Table slots chain the same way through the `previous` pointers their owners keep. Patches keep the bytes they
 // replaced; a patch that two owners made alike is undone when the last of them goes.
@@ -16,6 +21,8 @@
 #include <cstdint>
 
 namespace sadk::registry {
+
+void set_rank(const char *owner, int rank);
 
 bool hook(const char *owner, void *target, void *detour, void **original, const char *what);
 bool unhook(const char *owner, void *target, void *detour);

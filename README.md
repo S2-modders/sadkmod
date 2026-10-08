@@ -54,7 +54,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
 | `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
-| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function (newest first), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
+| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |

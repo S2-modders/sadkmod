@@ -36,8 +36,9 @@
 // mods before any mod starts. A mod.dll without them is not used.
 //
 // sadkmod's log(), Hook<> / hook_function(), patch() and hook_slot() in a mod are routed to the host: one log
-// file, and one registry in which several mods may hook the same function (the most recently loaded mod runs first
-// and reaches the others through its `original`). The registry records which mod made each change, so that
+// file, and one registry in which several mods may hook the same function. They run in load order (folder-name
+// order, whenever each one installs its hook): the first mod's detour runs first and reaches the next through its
+// `original`; the host's own hooks are always last, next to the game's code. The registry records which mod made each change, so that
 // unloading a mod takes back exactly its own. Changes made around it (write_memory, own MinHook) cannot be taken
 // back: a mod that should be unloadable uses only the routed functions.
 #pragma once

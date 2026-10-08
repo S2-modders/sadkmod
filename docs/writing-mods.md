@@ -79,8 +79,10 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   `start` installs hooks and patches; the real work happens in them later.
 - **Log:** `sadk::log` writes to the shim's log (`bin\wsock32_shim.txt`), prefixed with the mod's name.
 - **Hooks:** `sadk::Hook<>` and `sadk::hook_function` go through the shim's one hook registry. Several mods may hook
-  the same function: the most recently loaded runs first, and its `original` leads through the earlier ones to the
-  game. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not
+  the same function: they run in load order, the mod whose folder name sorts first runs first, and its `original`
+  leads through the later ones to the game, however late each mod installs its hook (`10_first`, `20_second`: the
+  folder name decides). The shim's own hooks always come last, next to the game's code. Table slots
+  (`sadk::hook_slot`) are ordered the same way. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not
   mix (the second finds unexpected bytes and is not applied).
 - **Version and flags:** `SADKMOD_MAIN(start, version, flags)` also exports `sadkmod_version()` (the mod's own version,
   an integer) and `sadkmod_flags()`: what the mod changes, combinable — `SADKMOD_CLIENT` (only this player's game),

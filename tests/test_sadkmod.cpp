@@ -116,26 +116,31 @@ static void test_registry()
     namespace reg = sadk::registry;
     volatile chained_fn call = chained;
     auto *t = reinterpret_cast<void *>(chained);
+    reg::set_rank("a", 1);                                       // load order a, b, c
+    reg::set_rank("b", 2);
+    reg::set_rank("c", 3);
+    CHECK(reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3"));   // installed out of order
     CHECK(reg::hook("a", t, (void *)add_ten, (void **)&orig_a, "a +10"));
     CHECK(reg::hook("b", t, (void *)times_two, (void **)&orig_b, "b x2"));
-    CHECK(reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3"));
     CHECK(!reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3 again"));   // same detour twice
-    CHECK(call(1) == ((1 + 1) + 10) * 2 - 3);                    // c, b, a, game: 21
+    CHECK(call(1) == ((1 + 1) - 3) * 2 + 10);                    // runs a, b, c, game: 8
     CHECK(reg::remove_owner("b").hooks == 1);                    // the middle one goes
-    CHECK(call(1) == (1 + 1) + 10 - 3);                          // 9
-    CHECK(reg::remove_owner("c").hooks == 1);                    // the newest
+    CHECK(call(1) == (1 + 1) - 3 + 10);                          // 9
+    CHECK(reg::remove_owner("c").hooks == 1);                    // the last before the game
     CHECK(call(1) == 12);
     CHECK(reg::unhook("a", t, (void *)add_ten));                 // the last: straight to the game's code
     CHECK(call(1) == 2);
     CHECK(reg::hook("b", t, (void *)times_two, (void **)&orig_b, "b x2 again"));   // the hook is reused
     CHECK(call(1) == 4);
+    CHECK(reg::hook("a", t, (void *)add_ten, (void **)&orig_a, "a +10 again"));    // goes before b
+    CHECK(call(1) == (1 + 1) * 2 + 10);
     CHECK(!reg::unhook("a", t, (void *)times_two));              // b's detour is not a's to remove
-    CHECK(reg::remove_owner("b").hooks == 1 && call(1) == 2);
+    CHECK(reg::remove_owner("a").hooks == 1 && reg::remove_owner("b").hooks == 1 && call(1) == 2);
 
-    // table slots: a below b; removing a leaves b leading to the original entry
+    // table slots in load order: a is the entry in the table, b below it; installing b later puts it below a
     CHECK(reg::write_slot("a", (void **)&table2.get, (void *)get_two, (void **)&slot_prev_a, "slot a"));
     CHECK(reg::write_slot("b", (void **)&table2.get, (void *)get_three, (void **)&slot_prev_b, "slot b"));
-    CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_two && slot_prev_a == get_one);
+    CHECK(table2.get(nullptr) == 2 && slot_prev_a == get_three && slot_prev_b == get_one);
     CHECK(reg::remove_owner("a").slots == 1);
     CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_one);
     CHECK(reg::remove_owner("b").slots == 1 && table2.get(nullptr) == 1);

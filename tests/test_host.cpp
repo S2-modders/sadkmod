@@ -95,7 +95,8 @@ int main()
     CHECK(sadk::host::redirect(std::wstring(cache.begin(), cache.end()).append(L"othermesh.mshraw").c_str(), true) == nullptr);
     DeleteFileA((cache + "mods\\testmesh_v1.mshraw").c_str());
 
-    // Chained hooks: the mod's x2 runs first, then the host's +10, then the function: (1 + 1 + 10) * 2.
+    // Chained hooks: the mod's x2 runs first, then the host's +10 (the host is always next to the game's code), then
+    // the function: (1 + 1 + 10) * 2.
     volatile target_fn call = test_target;
     CHECK(call(1) == 24);
     // Everything the mod did is recorded under its name and can be taken back: only the host's +10 remains.
