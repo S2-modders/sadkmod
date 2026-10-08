@@ -71,7 +71,7 @@ static bool start()                    // once, on the game's main thread, befor
     return Load::install(on_load);     // logged as "S2CE::CTexture::CreateFromFile"
 }
 
-SADKMOD_MAIN(start)
+SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it changes
 ```
 
 - **When:** the shim calls `sadkmod_init` before `SADK.exe`'s entry point runs. The game is not initialised yet, so
@@ -81,8 +81,16 @@ SADKMOD_MAIN(start)
   the same function: the most recently loaded runs first, and its `original` leads through the earlier ones to the
   game. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not
   mix (the second finds unexpected bytes and is not applied).
-- **Interface:** `sadkmod/include/sadkmod/mod.hpp` (`sadkmod_api`, version 1). `SADKMOD_MAIN` checks the version;
-  fields are only ever appended. Without sadkmod, a mod can implement `sadkmod_init(const sadkmod_api *)` itself.
+- **Version and flags:** `SADKMOD_MAIN(start, version, flags)` also exports `sadkmod_version()` (the mod's own version,
+  an integer) and `sadkmod_flags()`: what the mod changes, combinable — `SADKMOD_CLIENT` (only this player's game),
+  `SADKMOD_SERVER` (matches: every player of a match needs it alike), `SADKMOD_LOBBY` (the lobby village). A mod
+  without `mod.dll` names its flags with empty files `.client`, `.server`, `.lobby` in its folder. A mod without
+  any flag is not loaded. [TODO: the host does not read the flags yet; server-mod transfer is being built]
+- **Unloading:** `SADKMOD_STOP(stop)` exports `sadkmod_stop()`, called before a mod is unloaded: stop the mod's
+  threads, take back what it gave the game. Hooks, table slots and patches made through sadkmod are recorded under
+  the mod's name and taken back by the host; `write_memory` and a mod's own MinHook are not.
+- **Interface:** `sadkmod/include/sadkmod/mod.hpp` (`sadkmod_api`, version 2). `SADKMOD_MAIN` checks the version;
+  fields are only ever appended. Without sadkmod, a mod can implement the exports itself.
 - **Settings:** `sadk::mod_settings()` is the mod's `<name>.ini` next to its `mod.dll` (e.g. `billboards.ini`);
   other files live in `sadk::mod_dir()`.
 

@@ -7,5 +7,6 @@
 #include "mod.hpp"
 #include "msvc.hpp"
 #include "patch.hpp"
+#include "registry.hpp"
 #include "runtime.hpp"
 #include "verify.hpp"

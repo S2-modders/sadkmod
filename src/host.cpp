@@ -2,6 +2,7 @@
 #include <sadkmod/hook.hpp>
 #include <sadkmod/host.hpp>
 #include <sadkmod/mod.hpp>
+#include <sadkmod/registry.hpp>
 #include <sadkmod/runtime.hpp>
 
 #include <shlobj.h>
@@ -138,10 +139,32 @@ void SADK_CDECL decrypt_or_pass(void *file_name, void **data, std::uint32_t *siz
 // ── mod.dll ──────────────────────────────────────────────────────────────────────────────────────────────────────
 void SADK_CDECL host_log_line(const char *mod, const char *text) { log("[%s] %s", mod, text); }
 
+// Everything a mod changes is recorded under its name (registry.hpp); the log label names the mod as well.
+std::string label(const char *mod, const char *what) { return std::string("[") + mod + "] " + what; }
+
 bool SADK_CDECL host_hook(const char *mod, void *target, void *detour, void **original, const char *what)
 {
-    std::string label = std::string("[") + mod + "] " + what;
-    return hook_function(target, detour, original, label.c_str());
+    return registry::hook(mod, target, detour, original, label(mod, what).c_str());
+}
+
+bool SADK_CDECL host_unhook(const char *mod, void *target, void *detour) { return registry::unhook(mod, target, detour); }
+
+bool SADK_CDECL host_patch(const char *mod, std::uint32_t module, std::uintptr_t address, const std::uint8_t *expect,
+                           const std::uint8_t *replace, std::size_t n, const char *what)
+{
+    auto m = static_cast<Module>(module);
+    auto *at = module <= static_cast<std::uint32_t>(Module::tincat3) ? reinterpret_cast<std::uint8_t *>(resolve(m, address))
+                                                                     : nullptr;
+    if (!at) {
+        log("patch [%s] %s at %08x: module not loaded - not applied", mod, what, unsigned(address));
+        return false;
+    }
+    return registry::patch(mod, at, address, expect, replace, n, label(mod, what).c_str());
+}
+
+bool SADK_CDECL host_write_slot(const char *mod, void **slot, void *value, void **previous, const char *what)
+{
+    return registry::write_slot(mod, slot, value, previous, label(mod, what).c_str());
 }
 
 }  // namespace
@@ -256,6 +279,9 @@ Summary start_mods()
         api->game_root = game_root();
         api->log_line = host_log_line;
         api->hook = host_hook;
+        api->unhook = host_unhook;
+        api->patch = host_patch;
+        api->write_slot = host_write_slot;
         bool ok = init(api.get());
         apis.push_back(std::move(api));
         log("mods: %s\\mod.dll %s", m.name.c_str(), ok ? "started" : "reported a failure (or wants a newer host)");

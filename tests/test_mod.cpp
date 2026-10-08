@@ -16,4 +16,4 @@ static bool start()
                                "test_target x2");
 }
 
-SADKMOD_MAIN(start)
+SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)

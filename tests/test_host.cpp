@@ -98,6 +98,10 @@ int main()
     // Chained hooks: the mod's x2 runs first, then the host's +10, then the function: (1 + 1 + 10) * 2.
     volatile target_fn call = test_target;
     CHECK(call(1) == 24);
+    // Everything the mod did is recorded under its name and can be taken back: only the host's +10 remains.
+    CHECK(sadk::registry::count_owned("b_second") == 1);
+    CHECK(sadk::registry::remove_owner("b_second").hooks == 1);
+    CHECK(call(1) == 12);
 
     std::printf("%d checks, %d failed (log: %s\\test_host.log)\n", checks, failures, root.c_str());
     if (FILE *f = std::fopen((root + "\\test_host.log").c_str(), "r")) {

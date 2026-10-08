@@ -71,7 +71,7 @@ static void test_local()
     CHECK(call(&c, 1, false) == 102);            // hooked: +101
     CHECK(call(&c, 1, true) == 304);             // twice: +202
     CHECK(AddHook::original(&c, 1, false) == 305);
-    CHECK(sadk::unhook_function(reinterpret_cast<void *>(counter_add)));
+    CHECK(AddHook::remove() && !AddHook::installed());
     CHECK(call(&c, 1, false) == 306);
 
     // table slot
@@ -92,6 +92,67 @@ static void test_local()
     std::int32_t rel;
     std::memcpy(&rel, code + 3, 4);
     CHECK(site + 2 + 5 + rel == reinterpret_cast<std::uintptr_t>(get_two));
+}
+
+// ── Registry: owned chains that can lose any member ──────────────────────────────────────────────────────────────
+extern "C" __attribute__((noinline)) int SADK_CDECL chained(int x)
+{
+    volatile int k = x;
+    return k + 1;
+}
+using chained_fn = int(SADK_CDECL *)(int);
+static chained_fn orig_a, orig_b, orig_c;
+static int SADK_CDECL add_ten(int x) { return orig_a(x) + 10; }        // owner a, oldest
+static int SADK_CDECL times_two(int x) { return orig_b(x) * 2; }       // owner b
+static int SADK_CDECL minus_three(int x) { return orig_c(x) - 3; }     // owner c, newest
+
+static int SADK_THISCALL get_three(void *) { return 3; }
+static int(SADK_THISCALL *slot_prev_a)(void *);
+static int(SADK_THISCALL *slot_prev_b)(void *);
+static Vtbl table2 = {get_one};
+
+static void test_registry()
+{
+    namespace reg = sadk::registry;
+    volatile chained_fn call = chained;
+    auto *t = reinterpret_cast<void *>(chained);
+    CHECK(reg::hook("a", t, (void *)add_ten, (void **)&orig_a, "a +10"));
+    CHECK(reg::hook("b", t, (void *)times_two, (void **)&orig_b, "b x2"));
+    CHECK(reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3"));
+    CHECK(!reg::hook("c", t, (void *)minus_three, (void **)&orig_c, "c -3 again"));   // same detour twice
+    CHECK(call(1) == ((1 + 1) + 10) * 2 - 3);                    // c, b, a, game: 21
+    CHECK(reg::remove_owner("b").hooks == 1);                    // the middle one goes
+    CHECK(call(1) == (1 + 1) + 10 - 3);                          // 9
+    CHECK(reg::remove_owner("c").hooks == 1);                    // the newest
+    CHECK(call(1) == 12);
+    CHECK(reg::unhook("a", t, (void *)add_ten));                 // the last: straight to the game's code
+    CHECK(call(1) == 2);
+    CHECK(reg::hook("b", t, (void *)times_two, (void **)&orig_b, "b x2 again"));   // the hook is reused
+    CHECK(call(1) == 4);
+    CHECK(!reg::unhook("a", t, (void *)times_two));              // b's detour is not a's to remove
+    CHECK(reg::remove_owner("b").hooks == 1 && call(1) == 2);
+
+    // table slots: a below b; removing a leaves b leading to the original entry
+    CHECK(reg::write_slot("a", (void **)&table2.get, (void *)get_two, (void **)&slot_prev_a, "slot a"));
+    CHECK(reg::write_slot("b", (void **)&table2.get, (void *)get_three, (void **)&slot_prev_b, "slot b"));
+    CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_two && slot_prev_a == get_one);
+    CHECK(reg::remove_owner("a").slots == 1);
+    CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_one);
+    CHECK(reg::remove_owner("b").slots == 1 && table2.get(nullptr) == 1);
+
+    // patches: undone; the same patch by two owners stays until both are gone; changed bytes are left alone
+    static std::uint8_t code[4] = {1, 2, 3, 4};
+    const std::uint8_t before[2] = {2, 3}, after[2] = {8, 9};
+    CHECK(reg::patch("a", code + 1, 0x1001, before, after, 2, "patch a"));
+    CHECK(reg::patch("b", code + 1, 0x1001, before, after, 2, "patch b (same)"));
+    CHECK(code[1] == 8 && code[2] == 9 && reg::count_owned("a") == 1);
+    CHECK(reg::remove_owner("a").patches == 1 && code[1] == 8);   // b still needs it
+    CHECK(reg::remove_owner("b").patches == 1 && code[1] == 2 && code[2] == 3);
+    CHECK(reg::patch("a", code, 0x1000, (const std::uint8_t[]){1}, (const std::uint8_t[]){7}, 1, "patch a 2"));
+    code[0] = 5;                                                   // someone else changed it since
+    auto r = reg::remove_owner("a");
+    CHECK(r.patches == 1 && r.not_restored == 1 && code[0] == 5);
+    CHECK(reg::count_owned("a") == 0);
 }
 
 static void test_game(const char *exe)
@@ -129,6 +190,7 @@ int main(int argc, char **argv)
     DeleteFileA(log);
     sadk::log_open(log);
     test_local();
+    test_registry();
     if (argc > 1) test_game(argv[1]);
     std::printf("%d checks, %d failed (log: %s)\n", checks, failures, log);
     return failures ? 1 : 0;

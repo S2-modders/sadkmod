@@ -21,6 +21,9 @@
 //
 // hook_slot: replaces one entry of a vtable (or any table of function pointers) instead; only calls through that
 // table are affected.
+//
+// Every hook and slot belongs to whoever made it (in a mod: the mod) and can be removed again: unhook_function /
+// Hook<F>::remove, or all of a mod's at once when the host unloads it (registry.hpp).
 #pragma once
 #include "core.hpp"
 
@@ -28,18 +31,26 @@ namespace sadk {
 
 // Untyped layer (MinHook). `original` receives the trampoline. Logged; false on failure.
 bool hook_function(void *target, void *detour, void **original, const char *what);
-bool unhook_function(void *target);
+bool unhook_function(void *target, void *detour);   // that one detour; the others on `target` stay
 bool write_slot(void **slot, void *value, void **previous, const char *what);
 
 template <auto F>
 struct Hook {
     using pointer = typename decltype(F)::pointer;
     static inline pointer original = nullptr;
-    static bool installed() { return original != nullptr; }
+    static inline pointer detour = nullptr;
+    static bool installed() { return detour != nullptr; }
     // `what` names the hook in the log; by default the function's own name.
-    static bool install(pointer detour, const char *what = nullptr) {
-        return hook_function(reinterpret_cast<void *>(F.get()), reinterpret_cast<void *>(detour),
-                             reinterpret_cast<void **>(&original), what && *what ? what : F.name);
+    static bool install(pointer d, const char *what = nullptr) {
+        bool ok = hook_function(reinterpret_cast<void *>(F.get()), reinterpret_cast<void *>(d),
+                                reinterpret_cast<void **>(&original), what && *what ? what : F.name);
+        if (ok) detour = d;
+        return ok;
+    }
+    static bool remove() {
+        bool ok = detour && unhook_function(reinterpret_cast<void *>(F.get()), reinterpret_cast<void *>(detour));
+        if (ok) detour = nullptr;
+        return ok;
     }
 };
 

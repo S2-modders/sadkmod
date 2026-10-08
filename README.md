@@ -53,12 +53,13 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | Header | What |
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
-| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
+| `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
+| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function (newest first), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
-| `mod.hpp` | the mod interface: `sadkmod_api`, `SADKMOD_MAIN`, `mod_name()` / `mod_dir()`; in a mod, `log` and hooks go to the host |
+| `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
 | `host.hpp` | the mod host: `start_mods()` (index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading) |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
@@ -135,11 +136,12 @@ runtime dependencies).
 ## Status
 
 - Library: the self-test passes under Wine (`make test`: string layouts, MinHook through `Hook<>`, table
-  slots, patches, verify mode against the DRM-free `SADK.exe`). All generated headers compile with every
+  slots, patches, verify mode against the DRM-free `SADK.exe`, the registry: three owners chained on one function
+  and removed middle first, chained table slots, patches undone or kept while another owner shares them). All generated headers compile with every
   layout check passing.
 - Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (two mods overriding the same
   file, a switched-off mod, `CreateFileA`/`W` redirects, writes left alone, the mesh-cache redirect, a test
-  `mod.dll` chaining a hook onto the host's).
+  `mod.dll` chaining a hook onto the host's, then taken back by its owner).
 - The bridge shim on sadkmod: its 9 map-sharing patches verified against `SADK.exe`; the mods' patches and hook
   targets verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
   repo's mods work.

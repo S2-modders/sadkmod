@@ -1,4 +1,6 @@
+#include <sadkmod/mod.hpp>
 #include <sadkmod/patch.hpp>
+#include <sadkmod/registry.hpp>
 #include <sadkmod/runtime.hpp>
 #include <sadkmod/verify.hpp>
 
@@ -66,14 +68,10 @@ bool patch(Module m, std::uintptr_t address, const Bytes &expect, const Bytes &r
         log("verify %s at %08x: %s", what, unsigned(address), ok ? "expected bytes found" : "EXPECTED BYTES NOT FOUND");
         return ok;
     }
-    if (IsBadReadPtr(p, expect.n) || std::memcmp(p, expect.b.data(), expect.n) != 0) {
-        if (!IsBadReadPtr(p, replace.n) && std::memcmp(p, replace.b.data(), replace.n) == 0) return true;
-        log("patch %s at %08x: unexpected bytes - not applied", what, unsigned(address));
-        return false;
-    }
-    if (!write_memory(p, replace.b.data(), replace.n)) return false;
-    log("patch %s at %08x: applied", what, unsigned(address));
-    return true;
+    // In a mod the host applies it and records it under the mod's name (registry.hpp), so it can be undone.
+    if (const sadkmod_api *h = host_api())
+        return h->patch(mod_name(), static_cast<std::uint32_t>(m), address, expect.b.data(), replace.b.data(), expect.n, what);
+    return registry::patch("", p, address, expect.b.data(), replace.b.data(), expect.n, what);
 }
 
 bool patch_call(Module m, std::uintptr_t address, std::uintptr_t original, const void *target, const char *what)
