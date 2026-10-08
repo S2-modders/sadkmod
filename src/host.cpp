@@ -1,6 +1,7 @@
 #include <sadkmod/game/sadk_noav/fn/NBase.hpp>
 #include <sadkmod/game/sadk_noav/fn/NProperties.hpp>
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
+#include <sadkmod/game/sadk_noav/fn/ai.hpp>
 #include <sadkmod/hook.hpp>
 #include <sadkmod/host.hpp>
 #include <sadkmod/mod.hpp>
