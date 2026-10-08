@@ -501,6 +501,32 @@ void SADK_THISCALL on_run_property_script(game::ai::properties::PropertiesDb *db
     }
 }
 
+// ── The hosted game's name ───────────────────────────────────────────────────────────────────────────────────────
+// A lobby game is named "<avatar><text of !LOBBY_GAME>" ("... will spielen"), built only in
+// LobbyComm::ServerList::CreateGameServer S 0046aaa0 and UpdateGameServer, the key's only users, through
+// Localization::GetTextCStr S 004961f0. A host with an active server mod (one that changes the match) gets
+// " (modded)" appended there. The host's detour runs next to the game's code, so text a mod appends on the same hook
+// (assetshare: " (sharing)") comes after it.
+constexpr const char *kLobbyGameKey = "!LOBBY_GAME";
+using LobbyGameText = Hook<game::fn::ai::ui::Localization::GetTextCStr>;
+
+bool server_mod_active()
+{
+    Lock lock;
+    return std::any_of(all.begin(), all.end(),
+                       [](const std::unique_ptr<Mod> &m) { return m->active && (m->flags & SADKMOD_SERVER); });
+}
+
+msvc::string *SADK_THISCALL lobby_game_text(game::ai::ui::Localization *loc, msvc::string *result, char *key)
+{
+    LobbyGameText::original(loc, result, key);
+    if (key && std::strcmp(key, kLobbyGameKey) == 0 && server_mod_active()) {
+        static char modded[] = " (modded)";
+        game::fn::std_::string::append_ptr(result, modded, sizeof modded - 1);
+    }
+    return result;
+}
+
 // ── Unloading ────────────────────────────────────────────────────────────────────────────────────────────────────
 // True if `v` lies in [lo, hi).
 inline bool inside(std::uintptr_t v, std::uintptr_t lo, std::uintptr_t hi) { return v >= lo && v < hi; }
@@ -789,6 +815,7 @@ Summary start_mods()
         install_event_hooks();
         add_sub("", events::match_enter, reinterpret_cast<void *>(reload_properties), nullptr);
         RunPropertyScript::install(on_run_property_script, "mods: property scripts added by mods");
+        LobbyGameText::install(lobby_game_text, "mods: hosted games of a modded host say (modded)");
     }
     for (auto &m : all) m->active = true;
     s.files = rebuild_index();

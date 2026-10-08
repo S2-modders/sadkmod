@@ -9,7 +9,7 @@ This folder holds the repo's own mods:
 | Mod | What it does |
 |---|---|
 | `gamebridge` | Hosting from behind NAT, through the lobby server (`docs/bridge-protocol.md`): hooks the shim's `connect` / `send` / `listen` / `closesocket`, which carry all of TinCat's traffic. `gamebridge.ini`: `[Bridge] ForceBridge` (always host through the bridge), `Port` (the server's bridge port, default 7072). Installed by SAdK-ServerConfig. |
-| `assetshare` | What a match's players share, over the game's own file transfer (`docs/s2tftp.md`): the map, and the host's server mods (below). Custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps`, `AcceptServerMods` (false: refuse those downloads; you can't get ready in a game that needs them). Needed by every player: a host kicks a joiner without it. Installed by SAdK-ServerConfig. |
+| `assetshare` | What a match's players share, over the game's own file transfer (`docs/s2tftp.md`): the map, and the host's server mods (below). The host's game says " (sharing)" in the lobby's game list. Custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps`, `AcceptServerMods` (false: refuse those downloads; you can't get ready in a game that needs them). Needed by every player: a host kicks a joiner without it. Installed by SAdK-ServerConfig. |
 | `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig, whose "Disable billboards" is `Enabled` in the mod's `billboards.ini`. `docs/BINARY_PATCHES.md`, "Billboards". |
 | `borderless` | The game's fullscreen becomes a borderless window over one monitor (`borderless.ini`: `Monitor`), the picture at the resolution set in the game's options, stretched. The game's own settings are untouched. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
 | `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer, and the lobby town flickers with it (maintainer's test, 2026-10-08; cause unknown, not pursued): a tool for model makers, not for playing. |
@@ -54,6 +54,10 @@ Paths are matched case-insensitively, whatever form the game uses (relative or a
   all. The host hooks that lookup: for such a file it gives the file's place below `data\game\` (else
   `data\lobby\`) when a mod has it, and the `CreateFile` redirect serves it. A file the game would only find by
   listing a folder (`FindFirstFile`) is still not listed. [TODO: no such case is known yet]
+- **The game's name in the lobby.** A host with an active server mod hosts "<name> will spielen (modded)": the host
+  appends it to the `!LOBBY_GAME` text (`Localization::GetTextCStr`), which only the hosted game's name uses
+  (`LobbyComm::ServerList::CreateGameServer` / `UpdateGameServer`). A mod can append its own mark on the same hook;
+  the host's comes first, since its detour runs next to the game's code (assetshare: " (sharing)").
 - **Property scripts.** A `.lua` a mod adds to `data\game\scripts\properties\` (one the game does not have) runs right
   after the game's own property scripts, at start-up and whenever the property database is filled again: mods in load
   order, a mod's scripts in name order. The game itself runs only `data.lua`, which loads the others by name, so the
