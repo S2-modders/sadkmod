@@ -411,6 +411,52 @@ void SADK_CDECL reload_properties(void *)
     }
 }
 
+// ── Property scripts added by mods ───────────────────────────────────────────────────────────────────────────────
+// The game runs one property script, scripts\properties\data.lua (PropertiesDb::RunPropertyScript("data")
+// S 0054f8d0), which loads the others by name in a fixed order (Default.CallScript): a script a mod adds to that
+// folder would never run. So after every "data" run (start-up in CApplicationEx::Initialize, and reload_properties
+// above) the host runs each script an active mod adds there, the same way: mods in load order, a mod's scripts in
+// name order. The game has one Lua state and every script runs as a thread of it, so the globals of the game's
+// scripts (ids, constants) are visible to them. A mod that changes one of the game's scripts replaces the file
+// instead; only files the game does not have count as added.
+
+// The added scripts' names (without .lua) in the order they run.
+std::vector<std::string> added_property_scripts()
+{
+    static const std::wstring folder = L"game\\scripts\\properties\\";
+    std::vector<std::string> out;
+    Lock lock;
+    const Index *ix = current.load();
+    if (!ix) return out;
+    for (auto &m : all) {   // load order
+        if (!m->active) continue;
+        std::vector<std::wstring> names;
+        for (auto &[key, path] : ix->files) {
+            if (key.compare(0, folder.size(), folder) != 0) continue;
+            std::wstring file = key.substr(folder.size());
+            bool lua = file.size() > 4 && file.compare(file.size() - 4, 4, L".lua") == 0;
+            if (!lua || file.find(L'\\') != std::wstring::npos || ix->owner.at(key) != m->folder) continue;
+            if (GetFileAttributesW((data_prefix + key).c_str()) != INVALID_FILE_ATTRIBUTES) continue;   // the game's
+            names.push_back(file.substr(0, file.size() - 4));
+        }
+        std::sort(names.begin(), names.end());
+        for (auto &n : names) out.push_back(narrow(n));
+    }
+    return out;
+}
+
+using RunPropertyScript = Hook<game::fn::ai::properties::PropertiesDb::RunPropertyScript>;
+void SADK_THISCALL on_run_property_script(game::ai::properties::PropertiesDb *db, msvc::string *name)
+{
+    RunPropertyScript::original(db, name);
+    if (!name->equals_icase("data")) return;
+    for (auto &script : added_property_scripts()) {
+        log("mods: property script %s.lua", script.c_str());
+        msvc::string s = msvc::string::borrow(script);   // only read by RunPropertyScript
+        RunPropertyScript::original(db, &s);
+    }
+}
+
 // ── Unloading ────────────────────────────────────────────────────────────────────────────────────────────────────
 // True if `v` lies in [lo, hi).
 inline bool inside(std::uintptr_t v, std::uintptr_t lo, std::uintptr_t hi) { return v >= lo && v < hi; }
@@ -698,6 +744,7 @@ Summary start_mods()
     if (exe_is_supported()) {   // the game's own functions: only on the build they describe
         install_event_hooks();
         add_sub("", events::match_enter, reinterpret_cast<void *>(reload_properties), nullptr);
+        RunPropertyScript::install(on_run_property_script, "mods: property scripts added by mods");
     }
     for (auto &m : all) m->active = true;
     s.files = rebuild_index();

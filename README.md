@@ -64,7 +64,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
-| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it |
+| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it, the property scripts mods add (run after the game's `data.lua`) |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
 
