@@ -31,31 +31,41 @@ std::uintptr_t module_base(Module m);
 // mapped image being checked instead.
 std::uintptr_t resolve(Module m, std::uintptr_t static_address);
 
+// A name as a template argument (C++20): the generated declarations carry their Ghidra name, for logs.
+template <std::size_t N>
+struct Name {
+    char text[N];
+    constexpr Name(const char (&s)[N]) { for (std::size_t i = 0; i < N; i++) text[i] = s[i]; }
+};
+
 // A plain address with no type: code locations, data without a known type, patch sites.
-template <Module M, std::uintptr_t A>
+template <Module M, std::uintptr_t A, Name N = "">
 struct Addr {
     static constexpr Module module = M;
     static constexpr std::uintptr_t address = A;
+    static constexpr const char *name = N.text;
     std::uintptr_t get() const { return resolve(M, A); }
 };
 
 // A game function. P is its function pointer type, calling convention included.
-template <Module M, std::uintptr_t A, class P>
+template <Module M, std::uintptr_t A, class P, Name N = "">
 struct Fn {
     using pointer = P;
     static constexpr Module module = M;
     static constexpr std::uintptr_t address = A;
+    static constexpr const char *name = N.text;
     P get() const { return reinterpret_cast<P>(resolve(M, A)); }
     template <class... X>
     decltype(auto) operator()(X &&...x) const { return get()(static_cast<X &&>(x)...); }
 };
 
 // A game global of type T.
-template <Module M, std::uintptr_t A, class T>
+template <Module M, std::uintptr_t A, class T, Name N = "">
 struct Var {
     using type = T;
     static constexpr Module module = M;
     static constexpr std::uintptr_t address = A;
+    static constexpr const char *name = N.text;
     T *get() const { return reinterpret_cast<T *>(resolve(M, A)); }
     T &operator*() const { return *get(); }
     T *operator->() const { return get(); }

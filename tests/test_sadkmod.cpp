@@ -35,6 +35,7 @@ __attribute__((noinline)) int SADK_THISCALL counter_add(Counter *c, int n, bool 
 
 struct LocalFn {                             // the shape of a generated Fn<>, pointing into this program
     using pointer = add_fn;
+    static constexpr const char *name = "counter_add";
     pointer get() const { return counter_add; }
 };
 inline constexpr LocalFn counter_add_fn{};
@@ -44,24 +45,6 @@ static int SADK_THISCALL counter_add_hooked(Counter *c, int n, bool twice)
 {
     return AddHook::original(c, n + 100, twice);     // changes the argument, then runs the original
 }
-
-// ── before / after on a thiscall function, next to a full detour on the same function ──────────────────────────
-struct Scaled {
-    int factor;
-};
-using scale_fn = int(SADK_THISCALL *)(Scaled *, int);
-__attribute__((noinline)) int SADK_THISCALL scale(Scaled *s, int n)
-{
-    volatile int k = n;
-    return s->factor * k;
-}
-struct LocalScale {
-    using pointer = scale_fn;
-    pointer get() const { return scale; }
-};
-inline constexpr LocalScale scale_fn_obj{};
-using ScaleHook = sadk::Hook<scale_fn_obj>;
-static int SADK_THISCALL scale_detour(Scaled *s, int n) { return ScaleHook::original(s, n) + 1000; }
 
 // ── vtable slot hook ─────────────────────────────────────────────────────────────────────────────────────────────
 struct Vtbl {
@@ -84,24 +67,12 @@ static void test_local()
     Counter c{0};
     volatile add_fn call = counter_add;          // call through a pointer so the compiler cannot inline
     CHECK(call(&c, 1, false) == 1);
-    CHECK(AddHook::install(counter_add_hooked, "test counter_add"));
+    CHECK(AddHook::install(counter_add_hooked));    // logged under its name, "counter_add"
     CHECK(call(&c, 1, false) == 102);            // hooked: +101
     CHECK(call(&c, 1, true) == 304);             // twice: +202
     CHECK(AddHook::original(&c, 1, false) == 305);
     CHECK(sadk::unhook_function(reinterpret_cast<void *>(counter_add)));
     CHECK(call(&c, 1, false) == 306);
-
-    // before/after: before doubles the argument, after adds 1; a full detour (+1000) installed afterwards runs first
-    Scaled sc{3};
-    volatile scale_fn call_scale = scale;
-    CHECK(call_scale(&sc, 5) == 15);
-    CHECK(sadk::before<scale_fn_obj>([](Scaled *&, int &n) { n *= 2; }, "test before"));
-    CHECK(sadk::after<scale_fn_obj>([](int &r, Scaled *, int) { r += 1; }, "test after"));
-    CHECK(call_scale(&sc, 5) == 31);                // 3 * (5*2) + 1
-    CHECK(ScaleHook::install(scale_detour, "test detour on the same function"));
-    CHECK(call_scale(&sc, 5) == 1031);              // detour -> before/after -> function
-    CHECK(sadk::after<scale_fn_obj>([](int &r, Scaled *s, int) { r += s->factor; }, "test second after"));
-    CHECK(call_scale(&sc, 5) == 1034);
 
     // table slot
     int(SADK_THISCALL * previous)(void *) = nullptr;
@@ -144,6 +115,7 @@ static void test_game(const char *exe)
     auto *p = reinterpret_cast<const std::uint8_t *>(fn::S2CE::CTexture::CreateFromFile.get());
     CHECK(p == image.bytes.data() + (0x004e80d0 - 0x400000));
     CHECK(fn::_free.address == 0x006f23fe && fn::_malloc.address == 0x006f3ada);
+    CHECK(std::strcmp(fn::S2CE::CTexture::CreateFromFile.name, "S2CE::CTexture::CreateFromFile") == 0);
     sadk::verify_with(sadk::Module::sadk, nullptr);
     auto n = sadk::verify_counts();
     CHECK(n.matched == 2 && n.mismatched == 1);

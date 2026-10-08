@@ -114,6 +114,7 @@ bool exe_is_supported()
 std::string Ini::get(const char *section, const char *key, const char *fallback) const
 {
     char v[1024];
+    if (path.empty()) return fallback;
     GetPrivateProfileStringA(section, key, fallback, v, sizeof v, path.c_str());
     std::string s = v;
     auto junk = [](char c) { return c == ' ' || c == '"' || c == '\t'; };
@@ -125,6 +126,7 @@ std::string Ini::get(const char *section, const char *key, const char *fallback)
 
 int Ini::get_int(const char *section, const char *key, int fallback) const
 {
+    if (path.empty()) return fallback;
     return static_cast<int>(GetPrivateProfileIntA(section, key, fallback, path.c_str()));
 }
 
@@ -146,6 +148,10 @@ void bind_host(const sadkmod_api *api) { bound_host = api; }
 const sadkmod_api *host_api() { return bound_host; }
 const char *mod_name() { return bound_host ? bound_host->mod_name : ""; }
 const char *mod_dir() { return bound_host ? bound_host->mod_dir : ""; }
+Ini mod_settings()
+{
+    return Ini(bound_host ? std::string(bound_host->mod_dir) + "\\" + bound_host->mod_name + ".ini" : std::string());
+}
 
 // ── Game heap ────────────────────────────────────────────────────────────────────────────────────────────────────
 void *game_malloc(std::size_t size) { return game::fn::_malloc(size); }

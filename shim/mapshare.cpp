@@ -206,15 +206,15 @@ void apply_map_sharing()
                          {0x8B, 0x94, 0x24, 0x1C, 0x02, 0x00, 0x00, 0x8B, 0x86, 0x6C, 0x0B, 0x00, 0x00, 0x51, 0x53, 0x52, 0x50},
                          {0x8B, 0x86, 0x6C, 0x0B, 0x00, 0x00, 0x51, 0x6A, 0x01, 0x6A, 0x03, 0x50, 0x90, 0x90, 0x90, 0x90, 0x90},
                          "map advertised downloadable");
-    ok += sadk::patch_call(0x0045a381, fn::SelectMapDialog_AppendMapFiles.address, (void *)shim_append_maps,
+    ok += sadk::patch_call(0x0045a381, fn::SelectMapDialog_AppendMapFiles, (void *)shim_append_maps,
                            "map list + Documents\\SAdK\\maps");
-    ok += sadk::patch_call(0x00426b14, fn::_fopen_s.address, (void *)shim_tftp_fopen, "map server filter");
-    ok += sadk::patch_call(0x00427b29, fn::_rename.address, (void *)shim_tftp_rename, "download destination check 1");
-    ok += sadk::patch_call(0x00427b7e, fn::_rename.address, (void *)shim_tftp_rename, "download destination check 2");
-    ok += sadk::patch_call(0x00457f51, fn::NComm_Manager::SendPlayerReadyEvent.address, (void *)shim_send_ready,
+    ok += sadk::patch_call(0x00426b14, fn::_fopen_s, (void *)shim_tftp_fopen, "map server filter");
+    ok += sadk::patch_call(0x00427b29, fn::_rename, (void *)shim_tftp_rename, "download destination check 1");
+    ok += sadk::patch_call(0x00427b7e, fn::_rename, (void *)shim_tftp_rename, "download destination check 2");
+    ok += sadk::patch_call(0x00457f51, fn::NComm_Manager::SendPlayerReadyEvent, (void *)shim_send_ready,
                            "ready guard (Ready button)");
     ok += sadk::patch_call(0x00426ca5, fn::S2Tftp_OpenTempFile.address, (void *)shim_open_temp, "download start");
-    ok += sadk::patch_call(0x00426d14, fn::_fwrite.address, (void *)shim_fwrite, "download progress");
+    ok += sadk::patch_call(0x00426d14, fn::_fwrite, (void *)shim_fwrite, "download progress");
     ok += sadk::patch_call(0x00427a08, THUNK_REMOVE, (void *)shim_abort_remove, "download abort");
     log("map sharing: %d of 9 patches active (maps folder %s)", ok, maps_dir);
 }

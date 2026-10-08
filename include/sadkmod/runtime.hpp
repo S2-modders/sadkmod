@@ -32,6 +32,10 @@ struct Ini {
     bool get_bool(const char *section, const char *key, bool fallback) const;                // true/yes/1
 };
 
+// In a mod: its settings file, <mods>\<name>\<name>.ini (e.g. mods\billboards\billboards.ini). Outside a mod: an
+// Ini without a file, so every get() returns its fallback.
+Ini mod_settings();
+
 // An export of a loaded DLL as a typed function pointer (nullptr if the DLL or the export is missing).
 void *proc_address(const char *dll, const char *name);
 template <class P>

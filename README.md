@@ -39,7 +39,7 @@ void start()   // e.g. from a thread started in DllMain
 {
     sadk::log_open("C:\\mymod.txt");
     if (!sadk::exe_is_supported()) return;
-    Load::install(on_load, "texture loads");
+    Load::install(on_load);                       // the log names it: S2CE::CTexture::CreateFromFile
     // a byte patch: expected bytes, replacement, a name for the log
     sadk::patch(0x007e6240, {'a', 'd', '0'}, {'#', 'd', '0'}, "billboard literal");
 }
@@ -53,10 +53,10 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | Header | What |
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
-| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook); `before<F>` / `after<F>` callbacks that change arguments or the result without a hand-written detour (generated with F's calling convention); `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
-| `patch.hpp` | `patch`, `patch_call`, `Bytes` with `call_to` / `jmp_to` / `nops` |
+| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
+| `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
-| `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
+| `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api`, `SADKMOD_MAIN`, `mod_name()` / `mod_dir()`; in a mod, `log` and hooks go to the host |
 | `host.hpp` | the mod host: `start_mods()` (index, `CreateFile` redirect, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading) |
@@ -87,7 +87,9 @@ each followed by the Ghidra namespace or category. For example `S2CE::CTexture::
 - The signatures are only as good as the Ghidra map. Most names and types come from the mapping run (`[ai]`
   comments with `conf=known / inferred / guess`). Check a function in Ghidra before relying on it.
 
-Every function and global keeps its Ghidra signature and first plate comment as a comment.
+Every function and global keeps its Ghidra signature and first plate comment as a comment, and carries its Ghidra
+name as `.name` (e.g. `fn::S2CE::CTexture::CreateFromFile.name` is `"S2CE::CTexture::CreateFromFile"`), which
+`Hook<F>::install` uses as the log label.
 
 `sourcemap/ExportTypesJson.java` (run inside Ghidra, headless) turns a sourcemap's `types.gdt` into
 `types.json.gz`; it has to be rerun whenever the sourcemap is exported again.

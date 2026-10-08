@@ -535,10 +535,11 @@ class Program:
                 doc = f"// {f['sig']}" + (f"  [{f['cc']}]" if f["cc"] else "")
                 if plate:
                     doc += f"\n// {plate}"
+                label = cstr(f"{f['ns']}::{f['name']}" if f["ns"] else f["name"])
                 if why is None:
-                    line = f"{doc}\ninline constexpr ::sadk::Fn<{mod}, {addr}, {self.fn_pointer(f)}> {n}{{}};"
+                    line = f"{doc}\ninline constexpr ::sadk::Fn<{mod}, {addr}, {self.fn_pointer(f)}, {label}> {n}{{}};"
                 else:
-                    line = f"{doc}\n// address only: {why}\ninline constexpr ::sadk::Addr<{mod}, {addr}> {n}{{}};"
+                    line = f"{doc}\n// address only: {why}\ninline constexpr ::sadk::Addr<{mod}, {addr}, {label}> {n}{{}};"
                 result[tuple(parts)].append(line)
         return result
 
@@ -562,8 +563,22 @@ class Program:
             while n in used[ns]:
                 n += "_"
             used[ns].add(n)
-            out[ns].append(f"inline constexpr ::sadk::Var<{mod}, 0x{l['addr']}, {t}> {n}{{}};  // {d['type']}")
+            label = cstr(f"{l['ns']}::{l['name']}" if l["ns"] else l["name"])
+            out[ns].append(f"inline constexpr ::sadk::Var<{mod}, 0x{l['addr']}, {t}, {label}> {n}{{}};  // {d['type']}")
         return out
+
+
+def cstr(text):
+    """A C++ string literal of `text` (ASCII; anything else as an escape)."""
+    out = []
+    for ch in text:
+        if ch in '\\"':
+            out.append("\\" + ch)
+        elif 32 <= ord(ch) < 127:
+            out.append(ch)
+        else:
+            out.append(f"\\x{ord(ch) & 0xff:02x}\"\"")
+    return '"' + "".join(out) + '"'
 
 
 def write(path, text):

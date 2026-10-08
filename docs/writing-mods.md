@@ -68,7 +68,7 @@ static bool SADK_THISCALL on_load(game::S2CE::CTexture *tex, void *path, bool a,
 static bool start()                    // once, on the game's main thread, before the game's own start-up
 {
     sadk::log("settings in %s", sadk::mod_dir());
-    return Load::install(on_load, "log texture sizes");
+    return Load::install(on_load);     // logged as "S2CE::CTexture::CreateFromFile"
 }
 
 SADKMOD_MAIN(start)
@@ -77,16 +77,14 @@ SADKMOD_MAIN(start)
 - **When:** the shim calls `sadkmod_init` before `SADK.exe`'s entry point runs. The game is not initialised yet, so
   `start` installs hooks and patches; the real work happens in them later.
 - **Log:** `sadk::log` writes to the shim's log (`bin\wsock32_shim.txt`), prefixed with the mod's name.
-- **Before / after:** `sadk::before<F>(callback)` runs before F with its arguments by reference (changeable);
-  `sadk::after<F>(callback)` runs after F with its result by reference (changeable) and the arguments. sadkmod
-  generates the detour with F's calling convention; callbacks are plain functions or capture-less lambdas.
 - **Hooks:** `sadk::Hook<>` and `sadk::hook_function` go through the shim's one hook registry. Several mods may hook
   the same function: the most recently loaded runs first, and its `original` leads through the earlier ones to the
   game. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not
   mix (the second finds unexpected bytes and is not applied).
 - **Interface:** `sadkmod/include/sadkmod/mod.hpp` (`sadkmod_api`, version 1). `SADKMOD_MAIN` checks the version;
   fields are only ever appended. Without sadkmod, a mod can implement `sadkmod_init(const sadkmod_api *)` itself.
-- **Settings:** a mod keeps its own files in its folder (`sadk::mod_dir()`), e.g. `billboards.ini`.
+- **Settings:** `sadk::mod_settings()` is the mod's `<name>.ini` next to its `mod.dll` (e.g. `billboards.ini`);
+  other files live in `sadk::mod_dir()`.
 
 ## Building the repo's mods
 
