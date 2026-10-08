@@ -53,7 +53,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | Header | What |
 |---|---|
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
-| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook), `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
+| `hook.hpp` | `Hook<F>::install` / `::original` (MinHook); `before<F>` / `after<F>` callbacks that change arguments or the result without a hand-written detour (generated with F's calling convention); `hook_slot` for vtables and other function tables; one registry per process, in which a second hook on the same function chains onto the first |
 | `patch.hpp` | `patch`, `patch_call`, `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |

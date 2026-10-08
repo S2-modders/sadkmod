@@ -9,7 +9,7 @@ This folder holds the repo's own mods:
 | Mod | What it does |
 |---|---|
 | `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig ("Disable billboards"). `docs/BINARY_PATCHES.md`, "Billboards". |
-| `borderless` | Fullscreen becomes a borderless window over the monitor, at the monitor's resolution: instant switching to other windows, no lost device. Windowed mode is unchanged. |
+| `borderless` | Fullscreen becomes a borderless window over the monitor: the game keeps the resolution set in its options, stretched to the monitor. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
 | `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer. |
 | `npcmodels` | An NPC record's `bdyprt` value picks the `npc_bodyparts.xml` set, so the server can show the female, MacDoyleJr and MacGabhan NPC models (`!npc` in chat). `docs/BINARY_PATCHES.md`, "NPC model sets". |
 
@@ -77,6 +77,9 @@ SADKMOD_MAIN(start)
 - **When:** the shim calls `sadkmod_init` before `SADK.exe`'s entry point runs. The game is not initialised yet, so
   `start` installs hooks and patches; the real work happens in them later.
 - **Log:** `sadk::log` writes to the shim's log (`bin\wsock32_shim.txt`), prefixed with the mod's name.
+- **Before / after:** `sadk::before<F>(callback)` runs before F with its arguments by reference (changeable);
+  `sadk::after<F>(callback)` runs after F with its result by reference (changeable) and the arguments. sadkmod
+  generates the detour with F's calling convention; callbacks are plain functions or capture-less lambdas.
 - **Hooks:** `sadk::Hook<>` and `sadk::hook_function` go through the shim's one hook registry. Several mods may hook
   the same function: the most recently loaded runs first, and its `original` leads through the earlier ones to the
   game. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not

@@ -45,6 +45,24 @@ static int SADK_THISCALL counter_add_hooked(Counter *c, int n, bool twice)
     return AddHook::original(c, n + 100, twice);     // changes the argument, then runs the original
 }
 
+// ── before / after on a thiscall function, next to a full detour on the same function ──────────────────────────
+struct Scaled {
+    int factor;
+};
+using scale_fn = int(SADK_THISCALL *)(Scaled *, int);
+__attribute__((noinline)) int SADK_THISCALL scale(Scaled *s, int n)
+{
+    volatile int k = n;
+    return s->factor * k;
+}
+struct LocalScale {
+    using pointer = scale_fn;
+    pointer get() const { return scale; }
+};
+inline constexpr LocalScale scale_fn_obj{};
+using ScaleHook = sadk::Hook<scale_fn_obj>;
+static int SADK_THISCALL scale_detour(Scaled *s, int n) { return ScaleHook::original(s, n) + 1000; }
+
 // ── vtable slot hook ─────────────────────────────────────────────────────────────────────────────────────────────
 struct Vtbl {
     int(SADK_THISCALL *get)(void *);
@@ -72,6 +90,18 @@ static void test_local()
     CHECK(AddHook::original(&c, 1, false) == 305);
     CHECK(sadk::unhook_function(reinterpret_cast<void *>(counter_add)));
     CHECK(call(&c, 1, false) == 306);
+
+    // before/after: before doubles the argument, after adds 1; a full detour (+1000) installed afterwards runs first
+    Scaled sc{3};
+    volatile scale_fn call_scale = scale;
+    CHECK(call_scale(&sc, 5) == 15);
+    CHECK(sadk::before<scale_fn_obj>([](Scaled *&, int &n) { n *= 2; }, "test before"));
+    CHECK(sadk::after<scale_fn_obj>([](int &r, Scaled *, int) { r += 1; }, "test after"));
+    CHECK(call_scale(&sc, 5) == 31);                // 3 * (5*2) + 1
+    CHECK(ScaleHook::install(scale_detour, "test detour on the same function"));
+    CHECK(call_scale(&sc, 5) == 1031);              // detour -> before/after -> function
+    CHECK(sadk::after<scale_fn_obj>([](int &r, Scaled *s, int) { r += s->factor; }, "test second after"));
+    CHECK(call_scale(&sc, 5) == 1034);
 
     // table slot
     int(SADK_THISCALL * previous)(void *) = nullptr;
