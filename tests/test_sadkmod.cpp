@@ -159,7 +159,7 @@ static void test_registry()
     CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_one);
     CHECK(reg::remove_owner("b").slots == 1 && table2.get(nullptr) == 1);
 
-    // a 6-byte forwarding thunk, JMP DWORD PTR [slot], as the shim exports (gamehostbridge hooks those)
+    // a 6-byte forwarding thunk, JMP DWORD PTR [slot], as the shim exports (gamebridge hooks those)
     static void *slot = reinterpret_cast<void *>(chained);
     auto *thunk = static_cast<std::uint8_t *>(VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
     thunk[0] = 0xFF;

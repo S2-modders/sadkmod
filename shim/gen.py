@@ -1,7 +1,7 @@
 """Build helper: generates the forwarding thunks (thunks.S), the export table (wsock32.def) and the
 ordinal/index table (ordinals.h) from exports.txt (ordinal name). Every export is a thunk that jumps through
 real_ptrs[i], filled from the system wsock32.dll by ordinal at load (JMP DWORD PTR [real_ptrs+4*i], 6 bytes: mods
-hook these by name, e.g. the gamehostbridge mod hooks connect/send/listen/closesocket)."""
+hook these by name, e.g. the gamebridge mod hooks connect/send/listen/closesocket)."""
 
 rows = [line.split() for line in open("exports.txt") if line.strip()]
 with open("thunks.S", "w") as s, open("wsock32.def", "w") as d:
