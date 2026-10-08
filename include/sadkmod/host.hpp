@@ -13,7 +13,7 @@ namespace sadk::host {
 
 struct Summary {
     int mods = 0;          // folders taken into account
-    int files = 0;         // data files in the index (after overrides)
+    int files = 0;         // data files in the index (a file two mods have is a conflict: the first keeps it)
     int dlls = 0;          // mod.dll files that loaded and initialised
     int dll_failures = 0;
 };

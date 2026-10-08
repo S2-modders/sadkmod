@@ -6,6 +6,8 @@
 #include <windows.h>
 
 #include <climits>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -31,6 +33,16 @@ bool ready()
     }();
     return ok;
 }
+
+// ── Conflicts ────────────────────────────────────────────────────────────────────────────────────────────────────
+void SADK_CDECL stop_the_game(const char *text)
+{
+    MessageBoxA(nullptr, text, "Die Siedler - mods in conflict", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+    ExitProcess(1);
+}
+ConflictHandler conflict_handler = stop_the_game;
+
+const char *who(const std::string &owner) { return owner.empty() ? "the shim (wsock32.dll)" : owner.c_str(); }
 
 // ── Order ────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Lower rank runs first (outermost). The host ("") is always innermost, next to the game's code; an owner without
@@ -120,6 +132,19 @@ struct PatchRecord {
 std::vector<PatchRecord> patches;
 
 }  // namespace
+
+void set_conflict_handler(ConflictHandler h) { conflict_handler = h ? h : stop_the_game; }
+
+void conflict(const char *fmt, ...)
+{
+    char text[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(text, sizeof text, fmt, ap);
+    va_end(ap);
+    log("CONFLICT: %s", text);
+    conflict_handler(text);
+}
 
 void set_rank(const char *owner, int rank)
 {
@@ -220,15 +245,22 @@ bool patch(const char *owner, std::uint8_t *at, std::uintptr_t static_address, c
         log("patch %s at %08x: not readable - not applied", what, unsigned(static_address));
         return false;
     }
-    bool applied = std::memcmp(at, replace, n) == 0;
-    if (!applied) {
-        if (std::memcmp(at, expect, n) != 0) {
-            log("patch %s at %08x: unexpected bytes - not applied", what, unsigned(static_address));
+    for (auto &q : patches)   // one patch per address
+        if (q.at < at + n && at < q.at + q.after.size()) {
+            std::string mine = owner;
+            conflict("The mods \"%s\" and \"%s\" both change the game's code at address %08X (\"%s\" and "
+                     "\"%s\").\n\nOnly one of them can be used. Switch one of them off (rename its folder in the "
+                     "game's mods folder so that it starts with _) and start the game again.",
+                     who(q.owner), who(mine), unsigned(q.static_address < static_address ? static_address : q.static_address),
+                     q.what.c_str(), what);
             return false;
         }
-        if (!write_memory(at, replace, n)) return false;
-        log("patch %s at %08x: applied", what, unsigned(static_address));
+    if (std::memcmp(at, expect, n) != 0) {
+        log("patch %s at %08x: unexpected bytes - not applied", what, unsigned(static_address));
+        return false;
     }
+    if (!write_memory(at, replace, n)) return false;
+    log("patch %s at %08x: applied", what, unsigned(static_address));
     patches.push_back(PatchRecord{owner, what, at, static_address, {expect, expect + n}, {replace, replace + n}});
     return true;
 }
@@ -260,12 +292,7 @@ Removed remove_owner(const char *owner)
     for (std::size_t i = patches.size(); i-- > 0;) {
         PatchRecord &p = patches[i];
         if (p.owner != owner) continue;
-        bool shared = false;
-        for (auto &q : patches)
-            if (&q != &p && q.owner != owner && q.at == p.at && q.after == p.after) shared = true;
-        if (shared) {
-            log("patch %s at %08x: kept (another mod made the same patch)", p.what.c_str(), unsigned(p.static_address));
-        } else if (std::memcmp(p.at, p.after.data(), p.after.size()) == 0) {
+        if (std::memcmp(p.at, p.after.data(), p.after.size()) == 0) {
             write_memory(p.at, p.before.data(), p.before.size());
             log("patch %s at %08x: undone", p.what.c_str(), unsigned(p.static_address));
         } else {

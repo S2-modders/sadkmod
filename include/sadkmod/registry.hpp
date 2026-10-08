@@ -12,7 +12,11 @@
 // the one before it (or the stub) past it, so a mod in the middle of a chain can go.
 // The MinHook hook itself stays in place once made: with no detour left the stub leads straight to the trampoline.
 // Table slots chain the same way through the `previous` pointers their owners keep. Patches keep the bytes they
-// replaced; a patch that two owners made alike is undone when the last of them goes.
+// replaced.
+//
+// Conflicts: one patch per address. A patch overlapping one already made (by any owner) is a conflict: the handler is called with a message naming both owners and the address. By default it shows
+// that message in a message box and ends the process, since the game cannot run with only half of a mod. The host
+// reports two mods replacing the same data file the same way.
 //
 // remove_owner takes back everything of one owner. It does not make unloading safe on its own: a thread may still
 // run in the owner's code, which host.cpp checks before freeing a mod.dll.
@@ -23,6 +27,10 @@
 namespace sadk::registry {
 
 void set_rank(const char *owner, int rank);
+
+typedef void (*ConflictHandler)(const char *text);
+void set_conflict_handler(ConflictHandler h);   // tests; nullptr restores the default (message box, then exit)
+void conflict(const char *fmt, ...) __attribute__((format(printf, 1, 2)));   // logs it, then calls the handler
 
 bool hook(const char *owner, void *target, void *detour, void **original, const char *what);
 bool unhook(const char *owner, void *target, void *detour);

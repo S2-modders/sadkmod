@@ -1,5 +1,6 @@
 // Byte patches in the game's code and data. Every patch states the bytes it expects and is applied only where they
-// match exactly; already-patched bytes count as applied. Each result is logged. Every patch is recorded with the
+// match exactly. Each result is logged. One patch per address: a patch overlapping an earlier one is a conflict
+// that ends the game with a message naming both (registry.hpp). Every patch is recorded with the
 // bytes it replaced and its owner (in a mod: the mod), so unloading the mod undoes it (registry.hpp).
 #pragma once
 #include <array>

@@ -50,14 +50,24 @@ static std::string read(const char *path)
     return buf;
 }
 
+// Conflicts end the game by default; here they are only recorded.
+static int conflicts;
+static char last_conflict[1024];
+static void SADK_CDECL record_conflict(const char *text)
+{
+    conflicts++;
+    std::snprintf(last_conflict, sizeof last_conflict, "%s", text);
+}
+
 int main()
 {
+    sadk::registry::set_conflict_handler(record_conflict);
     std::string root = sadk::game_root();
     sadk::log_open((root + "\\test_host.log").c_str());
     put(root + "\\data\\lobby\\config\\npc_bodyparts.xml", "ORIGINAL");
     put(root + "\\data\\lobby\\config\\untouched.xml", "UNTOUCHED");
     put(root + "\\mods\\a_first\\data\\lobby\\config\\npc_bodyparts.xml", "MOD A");
-    put(root + "\\mods\\b_second\\data\\Lobby\\Config\\NPC_bodyparts.xml", "MOD B");   // later folder wins, any case
+    put(root + "\\mods\\b_second\\data\\Lobby\\Config\\NPC_bodyparts.xml", "MOD B");   // the same file, other case: conflict
     put(root + "\\mods\\b_second\\data\\lobby\\avatars\\testmesh.KEX", "MESH");
     put(root + "\\mods\\_switched_off\\data\\lobby\\config\\untouched.xml", "SHOULD NOT APPEAR");
     CopyFileA((root + "\\bin\\test_mod.dll").c_str(), (root + "\\mods\\b_second\\mod.dll").c_str(), FALSE);
@@ -65,20 +75,22 @@ int main()
     CHECK(sadk::hook_function(reinterpret_cast<void *>(test_target), reinterpret_cast<void *>(plus_ten),
                               reinterpret_cast<void **>(&host_original), "test_target +10"));
     sadk::host::Summary s = sadk::host::start_mods();
-    CHECK(s.mods == 2 && s.files == 2 && s.dlls == 1 && s.dll_failures == 0);   // two files: B replaces A's
+    CHECK(s.mods == 2 && s.files == 2 && s.dlls == 1 && s.dll_failures == 0);   // A's file (first wins) and B's mesh
+    CHECK(conflicts == 1 && std::strstr(last_conflict, "\"a_first\" and \"b_second\"") &&
+          std::strstr(last_conflict, "lobby\\config\\npc_bodyparts.xml"));
     // (The gDecryptData hook fails here, as SADK.exe is not loaded: logged, not checked.)
 
     // Data overrides: relative and absolute paths, A and W, mixed case and forward slashes.
     SetCurrentDirectoryA((root + "\\bin").c_str());
-    CHECK(read("..\\data\\lobby\\config\\npc_bodyparts.xml") == "MOD B");
-    CHECK(read((root + "/DATA/lobby/config/npc_bodyparts.xml").c_str()) == "MOD B");
+    CHECK(read("..\\data\\lobby\\config\\npc_bodyparts.xml") == "MOD A");
+    CHECK(read((root + "/DATA/lobby/config/npc_bodyparts.xml").c_str()) == "MOD A");
     CHECK(read("..\\data\\lobby\\config\\untouched.xml") == "UNTOUCHED");
     {
         std::wstring w = L"..\\data\\lobby\\config\\npc_bodyparts.xml";
         HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
         char buf[16] = {};
         DWORD got = 0;
-        CHECK(h != INVALID_HANDLE_VALUE && ReadFile(h, buf, 15, &got, nullptr) && std::string(buf) == "MOD B");
+        CHECK(h != INVALID_HANDLE_VALUE && ReadFile(h, buf, 15, &got, nullptr) && std::string(buf) == "MOD A");
         if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
     }
     // Writes into data\ go to the game's own file.

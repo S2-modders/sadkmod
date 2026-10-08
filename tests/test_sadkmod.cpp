@@ -20,6 +20,15 @@ static int failures, checks;
         }                                                                              \
     } while (0)
 
+// Conflicts end the game by default; here they are only recorded.
+static int conflicts;
+static char last_conflict[1024];
+static void SADK_CDECL record_conflict(const char *text)
+{
+    conflicts++;
+    std::snprintf(last_conflict, sizeof last_conflict, "%s", text);
+}
+
 // ── A thiscall "game function" of our own, hooked with Hook<> ────────────────────────────────────────────────────
 struct Counter {
     int value;
@@ -79,16 +88,16 @@ static void test_local()
     CHECK(sadk::hook_slot(&table.get, get_two, &previous, "test slot"));
     CHECK(table.get(nullptr) == 2 && previous == get_one);
 
-    // patch(): expected bytes, already applied, mismatch
+    // patch(): expected bytes; a second patch on the same bytes is a conflict; unexpected bytes
     static unsigned char code[8] = {0x8B, 0x56, 0x28, 0x8B, 0xC8, 0xFF, 0xD2, 0x90};
     auto site = reinterpret_cast<std::uintptr_t>(code);   // Module::sadk resolves to the address itself
     sadk::Bytes old{0x8B, 0x56, 0x28, 0x8B, 0xC8, 0xFF, 0xD2};
     sadk::Bytes repl = sadk::Bytes{0x8B, 0xC8} + sadk::call_to(sadk::Module::sadk, site + 2, (const void *)get_two);
     CHECK(sadk::patch(site, old, repl, "test patch"));
     CHECK(std::memcmp(code, repl.b.data(), 7) == 0);
-    CHECK(sadk::patch(site, old, repl, "test patch again"));                  // already applied
-    CHECK(!sadk::patch(site, sadk::Bytes{1, 2, 3, 4, 5, 6, 7}, repl.n == 7 ? sadk::Bytes{9, 9, 9, 9, 9, 9, 9} : repl,
-                       "test mismatch"));
+    CHECK(!sadk::patch(site + 4, {0xC8}, {0x90}, "test patch overlapping") && conflicts == 1);
+    static unsigned char other[3] = {1, 2, 3};
+    CHECK(!sadk::patch(reinterpret_cast<std::uintptr_t>(other), {1, 2, 4}, {9, 9, 9}, "test mismatch") && other[2] == 3);
     std::int32_t rel;
     std::memcpy(&rel, code + 3, 4);
     CHECK(site + 2 + 5 + rel == reinterpret_cast<std::uintptr_t>(get_two));
@@ -145,14 +154,18 @@ static void test_registry()
     CHECK(table2.get(nullptr) == 3 && slot_prev_b == get_one);
     CHECK(reg::remove_owner("b").slots == 1 && table2.get(nullptr) == 1);
 
-    // patches: undone; the same patch by two owners stays until both are gone; changed bytes are left alone
+    // patches: one per address (a second one, even the same, is a conflict naming both); undone; changed bytes are
+    // left alone
     static std::uint8_t code[4] = {1, 2, 3, 4};
     const std::uint8_t before[2] = {2, 3}, after[2] = {8, 9};
     CHECK(reg::patch("a", code + 1, 0x1001, before, after, 2, "patch a"));
-    CHECK(reg::patch("b", code + 1, 0x1001, before, after, 2, "patch b (same)"));
-    CHECK(code[1] == 8 && code[2] == 9 && reg::count_owned("a") == 1);
-    CHECK(reg::remove_owner("a").patches == 1 && code[1] == 8);   // b still needs it
-    CHECK(reg::remove_owner("b").patches == 1 && code[1] == 2 && code[2] == 3);
+    int seen = conflicts;
+    CHECK(!reg::patch("b", code + 2, 0x1002, (const std::uint8_t[]){9}, (const std::uint8_t[]){5}, 1, "patch b"));
+    CHECK(conflicts == seen + 1 && std::strstr(last_conflict, "\"a\" and \"b\"") && std::strstr(last_conflict, "00001002"));
+    CHECK(code[1] == 8 && code[2] == 9 && reg::count_owned("a") == 1 && reg::count_owned("b") == 0);
+    CHECK(reg::remove_owner("a").patches == 1 && code[1] == 2 && code[2] == 3);
+    CHECK(reg::patch("b", code + 2, 0x1002, (const std::uint8_t[]){3}, (const std::uint8_t[]){5}, 1, "patch b"));
+    CHECK(reg::remove_owner("b").patches == 1 && code[2] == 3);   // free again once a is gone
     CHECK(reg::patch("a", code, 0x1000, (const std::uint8_t[]){1}, (const std::uint8_t[]){7}, 1, "patch a 2"));
     code[0] = 5;                                                   // someone else changed it since
     auto r = reg::remove_owner("a");
@@ -194,6 +207,7 @@ int main(int argc, char **argv)
     std::strcat(log, "test_sadkmod.log");
     DeleteFileA(log);
     sadk::log_open(log);
+    sadk::registry::set_conflict_handler(record_conflict);
     test_local();
     test_registry();
     if (argc > 1) test_game(argv[1]);

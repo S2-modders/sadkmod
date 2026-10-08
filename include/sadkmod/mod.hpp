@@ -4,8 +4,9 @@
 //   data\...   files that replace (or add to) the game's data\... files, plain (not encrypted), same paths
 //   mod.dll    optional code; helper DLLs it needs may sit next to it
 //   .client, .server, .lobby   (only for a mod without mod.dll) empty files naming what the mod changes (flags below)
-// Folders are processed in name order (case-insensitive); for the same data file the later folder wins. A folder
-// whose name starts with '_' or '.' is skipped (a quick way to switch a mod off).
+// Folders are processed in name order (case-insensitive). Two mods replacing the same data file, or patching the
+// same bytes, are a conflict: the game shows which and closes (registry.hpp). A folder whose name starts with '_' or
+// '.' is skipped (a quick way to switch a mod off).
 //
 // What a mod changes, as flags that combine (a mod without any is not loaded):
 //   SADKMOD_CLIENT   only this player's game (looks, interface)

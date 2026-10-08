@@ -24,6 +24,7 @@ namespace {
 // ── Index ────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Built once before the hooks go in, read-only afterwards: no locking on the lookup path.
 std::unordered_map<std::wstring, std::wstring> index;   // lowercase path below data\ -> the mod's file
+std::unordered_map<std::wstring, std::string> index_owner;   // the same key -> the mod that provides it
 std::unordered_set<std::wstring> modded_meshes;          // lowercase file names (no extension) of modded .kex
 std::wstring data_prefix;                                // lowercase "<game>\data\"
 std::wstring cache_prefix;                               // lowercase "%LOCALAPPDATA%\SAdK\"
@@ -74,8 +75,15 @@ int add_files(const std::wstring &dir, const std::wstring &rel, const std::strin
             n += add_files(path, key, mod);
             continue;
         }
-        if (index.count(key)) log("mods: %s overrides an earlier mod's data\\%s", mod.c_str(), narrow(key).c_str());
+        if (auto it = index_owner.find(key); it != index_owner.end()) {   // the first mod keeps it
+            registry::conflict("The mods \"%s\" and \"%s\" both change the same game file:\n\ndata\\%s\n\nOnly one of "
+                               "them can be used. Switch one of them off (rename its folder in the game's mods folder "
+                               "so that it starts with _) and start the game again.",
+                               it->second.c_str(), mod.c_str(), narrow(key).c_str());
+            continue;
+        }
         index[key] = path;
+        index_owner[key] = mod;
         std::size_t slash = key.find_last_of(L'\\'), dot = key.find_last_of(L'.');
         if (dot != std::wstring::npos && key.compare(dot, std::wstring::npos, L".kex") == 0)
             modded_meshes.insert(key.substr(slash == std::wstring::npos ? 0 : slash + 1,
@@ -173,6 +181,7 @@ Summary build_index(const char *root)
 {
     Summary s;
     index.clear();
+    index_owner.clear();
     modded_meshes.clear();
     mods.clear();
     std::wstring wroot = widen(root);

@@ -24,8 +24,10 @@ This folder holds the repo's own mods:
         *.dll, *.ini    anything else the mod needs (mod.dll finds DLLs next to it)
 ```
 
-- Mods are processed in **folder-name order** (case-insensitive). When two mods have the same data file, the later
-  one wins; the log names the override.
+- Mods are processed in **folder-name order** (case-insensitive); number prefixes (`10_x`, `20_y`) set the order.
+- **Conflicts stop the game.** Two mods may not replace the same data file, and two patches may not change the same
+  bytes of the game's code. The first mod keeps it; for the second the game shows a message naming both mods and
+  the file or address, and closes. Switch one of them off and start again.
 - A folder whose name starts with `_` or `.` is skipped: rename `billboards` to `_billboards` to switch it off.
 - Nothing in the game folder is changed. Deleting a mod's folder undoes it.
 
@@ -82,8 +84,9 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   the same function: they run in load order, the mod whose folder name sorts first runs first, and its `original`
   leads through the later ones to the game, however late each mod installs its hook (`10_first`, `20_second`: the
   folder name decides). The shim's own hooks always come last, next to the game's code. Table slots
-  (`sadk::hook_slot`) are ordered the same way. `sadk::patch` changes bytes directly and checks what it replaces; two mods patching the same bytes do not
-  mix (the second finds unexpected bytes and is not applied).
+  (`sadk::hook_slot`) are ordered the same way.
+- **Patches:** `sadk::patch` changes bytes directly and checks what it replaces. One patch per address: a patch over
+  bytes another one already changed is a conflict (see "Layout in the game folder").
 - **Version and flags:** `SADKMOD_MAIN(start, version, flags)` also exports `sadkmod_version()` (the mod's own version,
   an integer) and `sadkmod_flags()`: what the mod changes, combinable — `SADKMOD_CLIENT` (only this player's game),
   `SADKMOD_SERVER` (matches: every player of a match needs it alike), `SADKMOD_LOBBY` (the lobby village). A mod
@@ -109,7 +112,7 @@ Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder here
 
 ## Status
 
-The host is tested under Wine (`make test` in `sadkmod`): discovery and order, overrides through `CreateFileA` /
+The host is tested under Wine (`make test` in `sadkmod`): discovery and order, data-file conflicts, overrides through `CreateFileA` /
 `CreateFileW`, writes left alone, the mesh-cache redirect, `mod.dll` loading and two hooks chained on one
 function. The mods' patches are verified against `SADK.exe`. In the game (maintainer's test, 2026-10-08) the mod
 system and the repo's mods work.
