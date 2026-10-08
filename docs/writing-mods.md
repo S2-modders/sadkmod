@@ -87,6 +87,11 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   leads through the later ones to the game, however late each mod installs its hook (`10_first`, `20_second`: the
   folder name decides). The shim's own hooks always come last, next to the game's code. Table slots
   (`sadk::hook_slot`) are ordered the same way.
+- **Game events instead of hooks:** `sadk::events::on_frame`, `on_match_enter` (before a match's world is built),
+  `on_match_leave`, `on_session_end`, `on_net_event` (every event of the match network). The host hooks the game
+  once and calls each mod in load order; a mod's subscriptions end when it is unloaded. `sadk::events::post(fn)`
+  runs `fn` on the game's main thread at the next frame: the safe way to call game functions from a thread of your
+  own. (`sadkmod/include/sadkmod/events.hpp` names the game functions behind each event.)
 - **One call inside one function:** `sadk::patch_calls(fn::Where, fn::What, (void *)detour, "label", 1)` redirects
   every call from `Where` to `What` (here: exactly one), found in the game binary (`sadkmod/include/sadkmod/calls.hpp`);
   `sadk::calls(fn::Where, fn::What)` lists them. No call-site address to look up by hand.

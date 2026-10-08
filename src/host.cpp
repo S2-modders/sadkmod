@@ -1,8 +1,11 @@
+#include <sadkmod/game/sadk_noav/fn/CApplicationEx.hpp>
 #include <sadkmod/game/sadk_noav/fn/NBase.hpp>
+#include <sadkmod/game/sadk_noav/fn/NComm_Manager.hpp>
 #include <sadkmod/game/sadk_noav/fn/NProperties.hpp>
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
 #include <sadkmod/game/sadk_noav/fn/ai.hpp>
 #include <sadkmod/hook.hpp>
+#include <sadkmod/events.hpp>
 #include <sadkmod/host.hpp>
 #include <sadkmod/mod.hpp>
 #include <sadkmod/msvc.hpp>
@@ -173,7 +176,6 @@ std::map<std::wstring, std::wstring> property_files(const Index *ix)
 bool file_hooks_installed;
 bool properties_dirty;
 void install_file_hooks();
-void install_property_reload();
 
 // The index of the active mods, in order. Returns the number of files.
 int rebuild_index()
@@ -251,14 +253,151 @@ void install_file_hooks()
     log("mods: file redirect %s", ok ? "installed" : "- A HOOK FAILED, see above");
 }
 
+// ── Events (events.hpp) ──────────────────────────────────────────────────────────────────────────────────────────
+// Subscriptions in load order (registry order; the host "" last). Dispatch works on a copy and skips an entry that
+// left meanwhile (a callback may deactivate mods), so callbacks may subscribe and unload freely.
+struct Sub {
+    std::string owner;
+    std::uint32_t event;
+    void *fn, *ctx;
+    std::uint64_t id;
+};
+std::vector<Sub> subs;
+std::uint64_t next_sub_id = 1;
+CRITICAL_SECTION subs_cs, posted_cs;
+bool events_ready = [] {
+    InitializeCriticalSection(&subs_cs);
+    InitializeCriticalSection(&posted_cs);
+    return true;
+}();
+struct Posted {
+    std::string owner;   // dropped with its mod, like the subscriptions
+    events::Callback fn;
+    void *ctx;
+};
+std::vector<Posted> posted;
+std::set<std::string> dropped_during_run;   // owners unloaded while posted calls run: skip the rest of theirs
+
+bool add_sub(const char *owner, std::uint32_t event, void *fn, void *ctx)
+{
+    if (!fn) return false;
+    if (event == events::posted) {   // any thread
+        EnterCriticalSection(&posted_cs);
+        posted.push_back(Posted{owner, reinterpret_cast<events::Callback>(fn), ctx});
+        LeaveCriticalSection(&posted_cs);
+        return true;
+    }
+    if (event > events::net_event) return false;
+    EnterCriticalSection(&subs_cs);
+    auto at = subs.begin();
+    while (at != subs.end() && registry::order_of(at->owner.c_str(), owner) <= 0) ++at;
+    subs.insert(at, Sub{owner, event, fn, ctx, next_sub_id++});
+    LeaveCriticalSection(&subs_cs);
+    return true;
+}
+
+void remove_subs(const std::string &owner)
+{
+    EnterCriticalSection(&subs_cs);
+    std::erase_if(subs, [&](const Sub &s) { return s.owner == owner; });
+    LeaveCriticalSection(&subs_cs);
+    EnterCriticalSection(&posted_cs);
+    std::erase_if(posted, [&](const Posted &p) { return p.owner == owner; });
+    dropped_during_run.insert(owner);
+    LeaveCriticalSection(&posted_cs);
+}
+
+template <class Call>
+void dispatch(std::uint32_t event, Call call)
+{
+    std::vector<Sub> now;
+    EnterCriticalSection(&subs_cs);
+    for (auto &s : subs)
+        if (s.event == event) now.push_back(s);
+    LeaveCriticalSection(&subs_cs);
+    for (auto &s : now) {
+        EnterCriticalSection(&subs_cs);
+        bool live = std::any_of(subs.begin(), subs.end(), [&](const Sub &x) { return x.id == s.id; });
+        LeaveCriticalSection(&subs_cs);
+        if (live) call(s);
+    }
+}
+
+void dispatch_plain(std::uint32_t event)
+{
+    dispatch(event, [](const Sub &s) { reinterpret_cast<events::Callback>(s.fn)(s.ctx); });
+}
+
+using FrameTick = Hook<game::fn::CApplicationEx::FrameTick>;
+void run_posted()
+{
+    std::vector<Posted> run;
+    EnterCriticalSection(&posted_cs);
+    run.swap(posted);
+    dropped_during_run.clear();
+    LeaveCriticalSection(&posted_cs);
+    for (auto &p : run) {
+        EnterCriticalSection(&posted_cs);
+        bool dropped = dropped_during_run.count(p.owner) > 0;
+        LeaveCriticalSection(&posted_cs);
+        if (!dropped) p.fn(p.ctx);
+    }
+}
+
+bool SADK_THISCALL on_frame_tick(game::CApplicationEx *app)
+{
+    run_posted();
+    dispatch_plain(events::frame);
+    return FrameTick::original(app);
+}
+
+using SceneCreate = Hook<game::fn::Scene_CreateGlobal>;
+void SADK_CDECL on_scene_create()
+{
+    dispatch_plain(events::match_enter);
+    SceneCreate::original();
+}
+
+using SceneDestroy = Hook<game::fn::Scene_DestroyGlobal>;
+void SADK_CDECL on_scene_destroy()
+{
+    SceneDestroy::original();
+    dispatch_plain(events::match_leave);
+}
+
+using NetShutdown = Hook<game::fn::NComm_Manager::Shutdown>;
+bool SADK_THISCALL on_net_shutdown(game::NComm_Manager *m, bool keep)
+{
+    bool ok = NetShutdown::original(m, keep);
+    dispatch_plain(events::session_end);
+    return ok;
+}
+
+using NetEvent = Hook<game::fn::NComm_Manager::HandleEvent>;
+bool SADK_THISCALL on_net_event(game::NComm_Manager *m, game::NComm::EventBase *ev)
+{
+    bool ok = NetEvent::original(m, ev);
+    dispatch(events::net_event, [&](const Sub &s) { reinterpret_cast<events::NetCallback>(s.fn)(s.ctx, m, ev); });
+    return ok;
+}
+
+void install_event_hooks()
+{
+    int n = FrameTick::install(on_frame_tick, "events: frame") +
+            SceneCreate::install(on_scene_create, "events: match_enter") +
+            SceneDestroy::install(on_scene_destroy, "events: match_leave") +
+            NetShutdown::install(on_net_shutdown, "events: session_end") +
+            NetEvent::install(on_net_event, "events: net_event");
+    log("mods: %d of 5 event hooks installed", n);
+}
+
 // ── Property reload ──────────────────────────────────────────────────────────────────────────────────────────────
 // The game fills its property database once, in CApplicationEx::Initialize S 004075d0. When the active mods' property
 // scripts change later, it is filled again with the game's own functions when the next match is entered:
-// Scene_CreateGlobal S 0067e800 runs once per match from nMenu::Game::OnEnter, before the world is built. Live
-// (offline, test mod propreload, 2026-10-08): two matches in a row, record counts identical to start-up.
-using SceneCreate = Hook<game::fn::Scene_CreateGlobal>;
-
-void SADK_CDECL scene_create()
+// the match_enter event (Scene_CreateGlobal S 0067e7e0, once per match from nMenu::Game::OnEnter, before the world is
+// built), after every mod's own match_enter. Live (offline, test mod propreload, 2026-10-08): two matches in a row,
+// record counts identical to start-up.
+void SADK_CDECL reload_properties(void *)
 {
     if (properties_dirty) {
         properties_dirty = false;
@@ -270,13 +409,6 @@ void SADK_CDECL scene_create()
         log("mods: property database filled again for the active mods (%u buildings, %u goods)", db->buildingMapSize,
             db->goodMapSize);
     }
-    SceneCreate::original();
-}
-
-void install_property_reload()
-{
-    if (SceneCreate::installed() || !exe_is_supported()) return;
-    SceneCreate::install(scene_create, "mods: property database filled again when mods change it");
 }
 
 // ── Unloading ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -403,6 +535,7 @@ bool SADK_CDECL api_activate_mod(const char *folder) { return activate(folder); 
 int SADK_CDECL api_deactivate_mod(const char *folder) { return static_cast<int>(deactivate(folder)); }
 void SADK_CDECL api_redirect_server_mods(bool on) { redirect_server_mods(on); }
 int SADK_CDECL api_free_pending() { return free_pending(); }
+bool SADK_CDECL api_subscribe(const char *mod, std::uint32_t event, void *fn, void *ctx) { return add_sub(mod, event, fn, ctx); }
 bool SADK_CDECL api_mod_hash(const char *folder, char out[33])
 {
     std::string h = content_hash(folder);
@@ -484,6 +617,7 @@ std::unique_ptr<Mod> read_mod(const std::wstring &dir, const std::wstring &folde
     api->mod_hash = api_mod_hash;
     api->redirect_server_mods = api_redirect_server_mods;
     api->free_pending = api_free_pending;
+    api->subscribe = api_subscribe;
     HMODULE self = nullptr;   // the module this code is linked into: the host
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCSTR>(&add_mod), &self);
@@ -522,9 +656,9 @@ void deactivate_locked(Mod &m, std::uintptr_t own_from)
 {
     if (m.has_dll && m.stop) m.stop();
     registry::Removed r = registry::remove_owner(m.folder.c_str());
+    remove_subs(m.folder);
     m.active = false;
     rebuild_index();
-    if (properties_dirty) install_property_reload();
     log("mods: %s deactivated (%d hooks, %d table slots, %d patches undone%s)", m.folder.c_str(), r.hooks, r.slots,
         r.patches, r.not_restored ? ", SOME PATCHED BYTES HAD CHANGED - left as they are" : "");
     try_free(m, own_from);
@@ -560,6 +694,10 @@ Summary start_mods()
     if (all.empty()) {
         log("mods: none");
         return s;
+    }
+    if (exe_is_supported()) {   // the game's own functions: only on the build they describe
+        install_event_hooks();
+        add_sub("", events::match_enter, reinterpret_cast<void *>(reload_properties), nullptr);
     }
     for (auto &m : all) m->active = true;
     s.files = rebuild_index();
@@ -635,7 +773,6 @@ bool activate(const char *folder)
         rebuild_index();
         return false;
     }
-    if (properties_dirty) install_property_reload();
     log("mods: %s activated", m->folder.c_str());
     return true;
 }
@@ -720,6 +857,14 @@ std::string content_hash(const char *folder)
     }
     CryptReleaseContext(prov, 0);
     return out;
+}
+
+bool subscribe(const char *owner, std::uint32_t event, void *fn, void *ctx) { return add_sub(owner, event, fn, ctx); }
+
+void raise(std::uint32_t event)
+{
+    if (event == events::frame) run_posted();
+    if (event != events::net_event) dispatch_plain(event);
 }
 
 thread_local bool skip_server_files;

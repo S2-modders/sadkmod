@@ -148,6 +148,13 @@ void conflict(const char *fmt, ...)
     conflict_handler(text);
 }
 
+int order_of(const char *a, const char *b)
+{
+    if (!ready()) return 0;
+    Lock lock;
+    return compare_order(a, b);
+}
+
 void set_order(const char *owner, const char *key)
 {
     if (!ready()) return;

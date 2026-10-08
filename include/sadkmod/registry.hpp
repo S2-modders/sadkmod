@@ -28,6 +28,7 @@
 namespace sadk::registry {
 
 void set_order(const char *owner, const char *key);
+int order_of(const char *a, const char *b);   // -1: a runs before b, 1: after, 0: the same place (events.hpp uses it)
 
 typedef void (*ConflictHandler)(const char *text);
 void set_conflict_handler(ConflictHandler h);   // tests; nullptr restores the default (message box, then exit)

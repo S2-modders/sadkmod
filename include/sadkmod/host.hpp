@@ -66,6 +66,11 @@ int free_pending();   // returns how many mod.dlls still wait
 // MD5 of the mod folder's content: every file, by lowercase path relative to the folder, name and bytes.
 std::string content_hash(const char *folder);
 
+// events.hpp in the host: `owner` "" is the host itself (its callbacks run last).
+bool subscribe(const char *owner, std::uint32_t event, void *fn, void *ctx);
+// Fires an event as the game's hooks do (frame also runs what was posted); for tests. net_event is not raised here.
+void raise(std::uint32_t event);
+
 // While off on this thread, the file redirect leaves out the files of server mods (the game's own file is opened).
 // For the build checksum: server mods are matched by the mod that transfers them, not by the checksum, which the
 // game sends before any transfer (docs/s2tftp.md, "Around a transfer").

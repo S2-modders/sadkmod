@@ -28,6 +28,11 @@ extern "C" __declspec(dllexport) __attribute__((noinline)) int SADK_CDECL test_t
     return k + 1;
 }
 
+// The test mod's event callbacks report here; the host's own report with tag 100 + n.
+static std::string events_seen;
+extern "C" __declspec(dllexport) void SADK_CDECL test_event(int tag) { events_seen += std::to_string(tag) + " "; }
+static void SADK_CDECL host_frame(void *) { test_event(101); }
+
 // The test mod's sadkmod_stop calls this (found with GetProcAddress on the exe).
 static volatile LONG stops;
 extern "C" __declspec(dllexport) void SADK_CDECL test_mod_stopped() { InterlockedIncrement(&stops); }
@@ -162,6 +167,15 @@ int main()
     CHECK(call(1) == 24);
     CHECK(sadk::registry::count_owned("b_second") == 1);   // recorded under its folder name
 
+    // Events: the mod's callbacks first, the host's last; a posted call runs once, at the next frame.
+    sadk::host::subscribe("", sadk::events::frame, reinterpret_cast<void *>(host_frame), nullptr);
+    sadk::host::raise(sadk::events::frame);
+    CHECK(events_seen == "3 1 101 ");
+    events_seen.clear();
+    sadk::host::raise(sadk::events::frame);
+    sadk::host::raise(sadk::events::match_enter);
+    CHECK(events_seen == "1 101 2 ");
+
     // A data-only server mod off and on again.
     CHECK(sadk::host::deactivate("d_server") == sadk::host::Unload::done && !active("d_server"));
     CHECK(read("..\\data\\game\\settings\\rules.xml") == "GAME RULES");
@@ -187,6 +201,9 @@ int main()
     CHECK(sadk::host::free_pending() == 0 && GetModuleHandleA(dll.c_str()) == nullptr);
     CHECK(sadk::host::activate("b_second") && call(1) == 24);  // loaded and started again
     CHECK(sadk::host::deactivate("b_second") == sadk::host::Unload::done && stops == 2 && call(1) == 12);
+    events_seen.clear();
+    sadk::host::raise(sadk::events::frame);   // unloaded: only the host's own callback is left
+    CHECK(events_seen == "101 ");
 
     // A downloaded mod: outside the scan until added, listed inactive, then activated; .temp_ is not in its name.
     std::string dl = root + "\\mods\\.temp_e_download";

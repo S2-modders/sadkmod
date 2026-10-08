@@ -55,6 +55,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
 | `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
 | `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
+| `events.hpp` | game events, hooked once by the host and dispatched in load order: `on_frame`, `on_match_enter` (before a match's world is built), `on_match_leave`, `on_session_end` (a network session ends), `on_net_event` (every match-network event); `post(fn)` runs `fn` on the main thread at the next frame, from any thread |
 | `calls.hpp` | `calls(where, what)`: every call from one game function to another, as static addresses, found by decoding `where`'s code (the map's body ranges) in the module's file; `patch_calls(where, what, detour, label, expected)` redirects them all |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |

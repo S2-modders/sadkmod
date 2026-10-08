@@ -79,6 +79,7 @@ struct sadkmod_api {
     void *host_module;   // the host's own DLL (the shim, <game>\bin\wsock32.dll): mods may hook its exports
     void (*redirect_server_mods)(bool on);   // host.hpp: off on this thread = server mods' files not redirected
     int (*free_pending)();                    // retries freeing unloaded mod.dlls; returns how many still wait
+    bool (*subscribe)(const char *mod, std::uint32_t event, void *fn, void *ctx);   // events.hpp
 };
 
 struct sadkmod_modinfo {
