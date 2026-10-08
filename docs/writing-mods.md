@@ -92,6 +92,9 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   once and calls each mod in load order; a mod's subscriptions end when it is unloaded. `sadk::events::post(fn)`
   runs `fn` on the game's main thread at the next frame: the safe way to call game functions from a thread of your
   own. (`sadkmod/include/sadkmod/events.hpp` names the game functions behind each event.)
+- **Small helpers:** `sadk::ui::room_message(text)` writes a line into the pre-game room's chat;
+  `sadk::msvc::owned_string` is a game string whose text lives on the game's heap (for strings the game fills in);
+  `sadk::mods::list()` / `activate` / `deactivate` / … manage other mods (`sadkmod/include/sadkmod/mods.hpp`).
 - **One call inside one function:** `sadk::patch_calls(fn::Where, fn::What, (void *)detour, "label", 1)` redirects
   every call from `Where` to `What` (here: exactly one), found in the game binary (`sadkmod/include/sadkmod/calls.hpp`);
   `sadk::calls(fn::Where, fn::What)` lists them. No call-site address to look up by hand.

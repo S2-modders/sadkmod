@@ -3,7 +3,9 @@
 //
 // Memory rule: a container the game owns is read, never resized or freed by us (its memory belongs to the game's
 // heap). Containers we build for the game (string::borrow, string::small) must outlive the call and must only go
-// to functions that read or copy them.
+// to functions that read or copy them. owned_string keeps its text on the game's heap: for a string the game fills
+// in (an out parameter) or one that is copied into the game.
+#include <string>
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +39,20 @@ struct string {
 };
 static_assert(sizeof(string) == 28);
 static_assert(offsetof(string, inline_text) == 4 && offsetof(string, size) == 0x14 && offsetof(string, capacity) == 0x18);
+
+// A string whose longer text lives on the game's heap (runtime.hpp game_malloc) and is freed with the game's free when
+// the owned_string goes: for strings the game fills in, which may have allocated, and for text handed to the game.
+// Not copyable; passed to the game as a string* (it is one).
+struct owned_string : string {
+    owned_string() : string(small("")) {}
+    explicit owned_string(std::string_view text);
+    owned_string(const owned_string &) = delete;
+    owned_string &operator=(const owned_string &) = delete;
+    owned_string(owned_string &&o) noexcept : string(o) { static_cast<string &>(o) = small(""); }
+    ~owned_string();
+    std::string str() const { return std::string(view()); }
+};
+static_assert(sizeof(owned_string) == 28);
 
 // std::vector<T> (16 bytes): +0 allocator word, +4 first, +8 last, +0xc end of storage. (Ghidra /ai/stl/MsvcVector.)
 template <class T>

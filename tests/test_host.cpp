@@ -176,6 +176,16 @@ int main()
     sadk::host::raise(sadk::events::match_enter);
     CHECK(events_seen == "1 101 2 ");
 
+    // sadk::mods in the host: the same list and operations a mod gets through the API.
+    {
+        auto viaMods = sadk::mods::list();
+        auto viaHost = sadk::host::mods();
+        CHECK(viaMods.size() == viaHost.size() && !viaMods.empty() && viaMods[0].folder == viaHost[0].folder);
+        CHECK(sadk::mods::content_hash("a_first") == sadk::host::content_hash("a_first"));
+        sadk::msvc::owned_string shortText(std::string_view("inline"));   // (longer text needs the game's heap)
+        CHECK(shortText.is_inline() && shortText.str() == "inline");
+    }
+
     // A data-only server mod off and on again.
     CHECK(sadk::host::deactivate("d_server") == sadk::host::Unload::done && !active("d_server"));
     CHECK(read("..\\data\\game\\settings\\rules.xml") == "GAME RULES");

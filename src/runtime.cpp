@@ -178,6 +178,25 @@ string string::small(std::string_view text)
     return s;
 }
 
+owned_string::owned_string(std::string_view text) : string(small(""))
+{
+    if (text.size() < 16) {
+        static_cast<string &>(*this) = small(text);
+        return;
+    }
+    auto *p = static_cast<char *>(game_malloc(text.size() + 1));
+    std::memcpy(p, text.data(), text.size());
+    p[text.size()] = 0;
+    heap_text = p;
+    size = static_cast<std::uint32_t>(text.size());
+    capacity = static_cast<std::uint32_t>(text.size());
+}
+
+owned_string::~owned_string()
+{
+    if (!is_inline() && heap_text) game_free(heap_text);
+}
+
 string string::borrow(const char *text, std::size_t length)
 {
     if (length < 16) return small({text, length});

@@ -58,7 +58,9 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `events.hpp` | game events, hooked once by the host and dispatched in load order: `on_frame`, `on_match_enter` (before a match's world is built), `on_match_leave`, `on_session_end` (a network session ends), `on_net_event` (every match-network event); `post(fn)` runs `fn` on the main thread at the next frame, from any thread |
 | `calls.hpp` | `calls(where, what)`: every call from one game function to another, as static addresses, found by decoding `where`'s code (the map's body ranges) in the module's file; `patch_calls(where, what, detour, label, expected)` redirects them all |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
-| `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::vector<T>`, `msvc::list<T>` |
+| `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::owned_string` (text on the game's heap, freed when it goes: for strings the game fills in or keeps), `msvc::vector<T>`, `msvc::list<T>` |
+| `ui.hpp` | `ui::room_message(text)`: a line in the pre-game room's chat |
+| `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_server_mods` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)`, `SADKMOD_STOP`, the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
