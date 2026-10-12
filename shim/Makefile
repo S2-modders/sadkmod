@@ -15,7 +15,7 @@ wsock32.dll: $(OBJ) thunks.S wsock32.def $(LIB)
 	$(CXX) -O2 -shared -s -static-libgcc -static-libstdc++ -o $@ $(OBJ) thunks.S wsock32.def $(LIBS)
 
 # sadkmod's own make decides what is out of date; the shim relinks only when the library file changed
-$(LIB) $(GENERATED) $(SADKMOD_PCH_GCH): FORCE
+$(LIB) $(GENERATED) $(SADKMOD_PCH_GCH) &: FORCE
 	$(MAKE) -C $(SADKMOD)
 
 build/%.o: %.cpp shim.hpp ordinals.h $(GENERATED) $(SADKMOD_PCH_GCH)

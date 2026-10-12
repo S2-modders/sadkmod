@@ -36,7 +36,9 @@ data-%: FORCE
 	@if [ -d $*/data ]; then cp -r $*/data build/$*/; fi
 	@for f in $*/.client $*/.server $*/.lobby; do if [ -e $$f ]; then cp $$f build/$*/; fi; done
 
-$(LIB) $(GENERATED) $(SADKMOD_PCH_GCH): FORCE
+# One grouped rule (&:): as three separate rules a parallel make would run sadkmod's make three times at once, and
+# two of them writing the precompiled header damage it.
+$(LIB) $(GENERATED) $(SADKMOD_PCH_GCH) &: FORCE
 	$(MAKE) -C $(SADKMOD)
 
 $(OBJ_DIR)/%.o: %.cpp $(SADKMOD_PCH_GCH)
