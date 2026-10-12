@@ -1,7 +1,7 @@
 # wsock32 shim
 
-A proxy `wsock32.dll` that loads mods into the game. Mods: `mods/README.md`; the library both are built on:
-`sadkmod/README.md`.
+A proxy `wsock32.dll` that loads mods into the game. Mods: `docs/writing-mods.md`; the library both are built on:
+`README.md`.
 
 `tincat3.dll` imports all of its sockets from `WSOCK32.dll` by ordinal; `SADK.exe` uses `WS2_32.dll`
 directly. `WSOCK32.dll` is not a KnownDLL, so Windows loads a copy from the game folder before the system one
@@ -18,8 +18,8 @@ directly. `WSOCK32.dll` is not a KnownDLL, so Windows loads a copy from the game
   point.
 - **Requires the DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`). On any other build the shim stays a
   pure pass-through and loads no mods.
-- Everything else lives in mods: hosting through the lobby server is `mods/gamebridge`, map sharing
-  `mods/assetshare`.
+- Everything else lives in mods: hosting through the lobby server is the `gamebridge` mod, map sharing
+  `assetshare` (both in sadklobby).
 - Build (Linux, mingw-w64, Python 3): `make` -> `wsock32.dll` (builds `sadkmod` first). `make test` loads it into a
   test program under Wine: forwarding works, and it stays inactive outside `SADK.exe`.
 - Install: copy it into the game's `bin` folder, next to `SADK.exe` (SAdK-ServerConfig does this, with the mods).

@@ -2,7 +2,7 @@
 #   make          wsock32.dll (builds sadkmod first)
 #   make test     loads it into a test program under Wine: forwarding, inactive outside SADK.exe
 CXX = i686-w64-mingw32-g++
-SADKMOD = ../../sadkmod
+SADKMOD = ..
 include $(SADKMOD)/pch.mk
 CXXFLAGS = $(SADKMOD_CXXFLAGS) -I. -I$(SADKMOD)/include -I$(SADKMOD)/build/include
 LIBS = $(SADKMOD)/build/libsadkmod.a -lkernel32 -ladvapi32 -lshell32 -luser32

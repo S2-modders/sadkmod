@@ -10,7 +10,7 @@ CC = i686-w64-mingw32-gcc
 AR = i686-w64-mingw32-ar
 CXXFLAGS = $(SADKMOD_CXXFLAGS) -Iinclude -Ibuild/include -Ithird_party/minhook/include -Ithird_party/minhook/src
 CFLAGS = -O2 -Ithird_party/minhook/include
-SOURCEMAP = ../sourcemap
+SOURCEMAP = sourcemap
 SADK_EXE ?= $(HOME)/sadk_game/bin/SADK.exe
 
 SRC = $(wildcard src/*.cpp)

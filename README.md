@@ -1,7 +1,7 @@
 # sadkmod — modding *Die Siedler - Aufbruch der Kulturen* from inside the game
 
-A small C++23 library for code that runs inside `SADK.exe`, as a DLL the game loads, such as the bridge
-shim (`bridge/wsock32_shim`, built on it). It gives such code:
+A small C++23 library for code that runs inside `SADK.exe`, as a DLL the game loads, such as the shim
+(`shim/`, the mod loader built on it). It gives such code:
 
 - **Typed declarations of the game**, generated from the project's Ghidra map (`sourcemap/`): every named
   function as a callable, hookable object with its calling convention, every struct and class with a layout
@@ -11,7 +11,7 @@ shim (`bridge/wsock32_shim`, built on it). It gives such code:
 - **Mirrors of the MSVC 2005 containers** the game passes around (`std::string`, `vector`, `list`).
 - **A verify mode** that runs a mod's patch code against a copy of `SADK.exe` without starting the game.
 - **The mod host** (`host.hpp`) and the **mod interface** (`mod.hpp`): the shim loads `<game>\mods\*` with it —
-  data file overrides and `mod.dll` code. How to write a mod: `mods/README.md`.
+  data file overrides and `mod.dll` code. How to write a mod: `docs/writing-mods.md`.
 
 Only the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`) is described. Every address is
 specific to that build, so a mod must check `sadk::exe_is_supported()` before patching or hooking anything.
@@ -124,7 +124,8 @@ sadk::verify_with(sadk::Module::sadk, nullptr);
 auto n = sadk::verify_counts();          // n.matched, n.mismatched; details in the log
 ```
 
-`bridge/wsock32_shim/tests/verify_patches.cpp` does this for every patch of the shim (`make verify` there).
+A folder of mods built with `mods.mk` gets this as `make verify`: its `tests/verify_mods.cpp` calls each mod's
+start function in verify mode.
 
 ## Building
 
@@ -139,12 +140,20 @@ A mod compiles with `-std=c++23 -fno-exceptions -fno-rtti -I<sadkmod>/include -I
 and links `<sadkmod>/build/libsadkmod.a` (add `-static-libgcc -static-libstdc++` for a DLL without
 runtime dependencies).
 
+**A folder of mods.** `mods.mk` builds every mod folder next to the Makefile that includes it, each into
+`build/<name>/` (`docs/writing-mods.md`, "Building mods"):
+
+```
+SADKMOD ?= ../sadkmod
+include $(SADKMOD)/mods.mk
+```
+
 **Precompiled header.** The generated game declarations are about 320,000 lines; parsing them took about 10 s per
 source file. `make` builds them once into `build/pch/sadkmod_pch.hpp.gch` (about 20 s, again only after the
 declarations are regenerated; never committed: `build/`). sadkmod, the shim and the mods include `pch.mk`, compile
 with its shared flags and `-include` the header, so a source file compiles in about a second. `entry.hpp`
 (`SADKMOD_MAIN`, reading `SADKMOD_NO_ENTRY`) stays out of it: GCC rejects a precompiled header when a macro it looked
-at is defined differently, and `mods/`'s verify build defines that one. The builds run in parallel (`-j<cores>`).
+at is defined differently, and the mods' verify build (`mods.mk`) defines that one. The builds run in parallel (`-j<cores>`).
 
 ## Status
 
@@ -152,13 +161,20 @@ at is defined differently, and `mods/`'s verify build defines that one. The buil
   slots, patches, verify mode against the DRM-free `SADK.exe`, the registry: three owners chained on one function
   installed out of order and run in load order, one removed from the middle, chained table slots, patches undone,
   overlapping patches reported as a conflict). All generated headers compile with every layout check passing.
-- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`mods/README.md`, "Status").
+- Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`docs/writing-mods.md`, "Status").
 - The shim on sadkmod (proxy and mod host); the mods' patches and hook targets (map sharing's 9 patches among them)
-  verified in `mods/`. In the running game (maintainer's test, 2026-10-08): the shim, the mod host and the
-  repo's mods work.
+  verified in the repositories that hold the mods. In the running game (maintainer's test, 2026-10-08): the shim,
+  the mod host and those mods work.
 
 ## Third-party
 
 `third_party/minhook/`: [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu (BSD 2-clause,
 `LICENSE.txt`), commit in `VERSION.txt`. Only the 32-bit sources are built. The generated headers contain
 names, types and addresses only, no game code.
+
+## Related repositories
+
+- [sadklobby](https://github.com/S2-modders/sadklobby): the lobby server, with the mods its players need
+  (`gamebridge`, `assetshare`, `billboards`) and the setup tool that installs the shim.
+- [SAdK-Resurrected](https://github.com/J4n1X/SAdK-Resurrected): the reverse-engineering project `sourcemap/` is
+  exported from, with the documentation of the game's internals and further mods.

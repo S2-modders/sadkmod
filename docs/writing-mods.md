@@ -1,25 +1,13 @@
-# Mods
+# Writing mods
 
 The shim (`bin\wsock32.dll`) loads mods from the game's `mods` folder at start-up. A mod can replace or add
 game data files, and it can bring code (`mod.dll`) that patches and hooks the game through `sadkmod`. Like the
 shim, mods only run on the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`).
 
-This folder holds the repo's own mods:
-
-| Mod | What it does |
-|---|---|
-| `gamebridge` | Hosting from behind NAT, through the lobby server (`docs/bridge-protocol.md`): hooks the shim's `connect` / `send` / `listen` / `closesocket`, which carry all of TinCat's traffic. `gamebridge.ini`: `[Bridge] ForceBridge` (always host through the bridge), `Port` (the server's bridge port, default 7072). Installed by SAdK-ServerConfig. |
-| `assetshare` | What a match's players share, over the game's own file transfer (`docs/s2tftp.md`): the map, and the host's server mods (below). The host's game says " (sharing)" in the lobby's game list. Custom maps in `Documents\SAdK\maps` appear in the map picker (`docs/BINARY_PATCHES.md`, "Map sharing"). `assetshare.ini`: `[AssetShare] AcceptServerMaps`, `AcceptServerMods` (false: refuse those downloads; you can't get ready in a game that needs them). Needed by every player: a host kicks a joiner without it. Installed by SAdK-ServerConfig. |
-| `billboards` | The lobby's advertising screens show a plain area of their board instead of the dead web pages. Installed by SAdK-ServerConfig, whose "Disable billboards" is `Enabled` in the mod's `billboards.ini`. `docs/BINARY_PATCHES.md`, "Billboards". |
-| `borderless` | The game's fullscreen becomes a borderless window over one monitor (`borderless.ini`: `Monitor`), the picture at the resolution set in the game's options, stretched. The game's own settings are untouched. Instant switching to other windows, no lost device. Windowed mode is unchanged. |
-| `oscursor` | The game's mouse cursors (the arrow, the build and clock cursors of `cursors.xml`) are shown as Windows cursors instead of Direct3D's, which current Windows shows as no cursor at all above 125% display scaling. Only with `engine.ini` `hardwareCursor = 1` (the game's default); with 0 the game shows the plain Windows arrow anyway. `docs/BINARY_PATCHES.md`, "Windows cursor". Not tested in the game yet. |
-| `nopreview` | Choosing a map without a preview picture (`<map>.bmp`) in the host dialog or the offline free game no longer crashes the game: the game destroys the previous map's preview and keeps drawing it. The preview area stays empty for such a map. `docs/BINARY_PATCHES.md`, "Map without a preview picture". Not tested in the game yet. |
-| `nomeshcache` | The game never uses its converted-mesh cache (`%LOCALAPPDATA%\SAdK\*.mshraw`): every model is read from its `.KEX`, so a changed model shows up at once. Loading takes longer, and the lobby town flickers with it (maintainer's test, 2026-10-08; cause unknown, not pursued): a tool for model makers, not for playing. |
-| `cheatstart` | **Test only.** Every player's starting headquarters gets 1000 of each good of their tribe and 99 of each soldier type and level, on top of the map's starting goods (hook on `NVillage::Depot::AddInitialStock`; maps carry their own starting goods, so `tribes.lua` would not reach them). Amounts in `cheatstart.ini`. A server mod: the host's copy, ini included, runs for everyone. |
-| `propreload` | **Test only.** Reloads the property database (`scripts\properties\*.lua`) every time a match is entered, with the game's own functions, to find out whether that is safe between matches (`docs/data-loading.md` §1). Logs the record counts before and after. |
-| `foresterfix` | **Server mod**, data only. The forester no longer crashes the game when it plants a tree on volcanic ground: the volcanic patterns get Bavarian trees, as in PiotrWieczorek's fix, through its own property script `foresterfix.lua` instead of a replaced `patterns.lua` (`foresterfix/README.md`). |
-| `navalcombatfix` | **Server mod** (every player of a match needs it). Soldiers cross the water through their own player's harbours, for attacks (also from a colony) and defence, with the game's own soldier counts; a ship picks up soldiers left with nowhere to go behind a harbour that turned neutral (`navalcombatfix/CONCEPT.md`, `docs/navy-and-military.md` §7). A naval invasion ("Prepare naval invasion" on the buoy) takes a free harbour where no colony fits. `navalcombatfix.ini` switches each rule; see `navalcombatfix/README.md`. Not tested in the game yet. |
-| `npcmodels` | An NPC record's `bdyprt` value picks the `npc_bodyparts.xml` set, so the server can show the female, MacDoyleJr and MacGabhan NPC models (`!npc` in chat). `docs/BINARY_PATCHES.md`, "NPC model sets". |
+Mods built on sadkmod live in other repositories: `gamebridge`, `assetshare` and `billboards` in
+[sadklobby](https://github.com/S2-modders/sadklobby), further ones in
+[SAdK-Resurrected](https://github.com/J4n1X/SAdK-Resurrected). `docs/...` and `tools/...` paths below name files of
+SAdK-Resurrected.
 
 ## Layout in the game folder
 
@@ -108,12 +96,12 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   `on_match_leave`, `on_session_end`, `on_net_event` (every event of the match network). The host hooks the game
   once and calls each mod in load order; a mod's subscriptions end when it is unloaded. `sadk::events::post(fn)`
   runs `fn` on the game's main thread at the next frame: the safe way to call game functions from a thread of your
-  own. (`sadkmod/include/sadkmod/events.hpp` names the game functions behind each event.)
+  own. (`include/sadkmod/events.hpp` names the game functions behind each event.)
 - **Small helpers:** `sadk::ui::room_message(text)` writes a line into the pre-game room's chat;
   `sadk::msvc::owned_string` is a game string whose text lives on the game's heap (for strings the game fills in);
-  `sadk::mods::list()` / `activate` / `deactivate` / … manage other mods (`sadkmod/include/sadkmod/mods.hpp`).
+  `sadk::mods::list()` / `activate` / `deactivate` / … manage other mods (`include/sadkmod/mods.hpp`).
 - **One call inside one function:** `sadk::patch_calls(fn::Where, fn::What, (void *)detour, "label", 1)` redirects
-  every call from `Where` to `What` (here: exactly one), found in the game binary (`sadkmod/include/sadkmod/calls.hpp`);
+  every call from `Where` to `What` (here: exactly one), found in the game binary (`include/sadkmod/calls.hpp`);
   `sadk::calls(fn::Where, fn::What)` lists them. No call-site address to look up by hand.
 - **Patches:** `sadk::patch` changes bytes directly and checks what it replaces. One patch per address: a patch over
   bytes another one already changed is a conflict (see "Layout in the game folder").
@@ -124,7 +112,7 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   any flag, or a `mod.dll` without `sadkmod_version` / `sadkmod_flags` (built for an older sadkmod), is not loaded;
   the log says why. Every other installed mod is loaded at start-up, whatever its flags.
 - **Loading and unloading later:** the host can also add a mod folder outside the scan (a downloaded
-  `mods\.temp_<name>`, which keeps `<name>.ini`), activate it and deactivate any mod again (`sadkmod/include/sadkmod/host.hpp`;
+  `mods\.temp_<name>`, which keeps `<name>.ini`), activate it and deactivate any mod again (`include/sadkmod/host.hpp`;
   for mods, the same through `sadkmod_api`). A mod activated later starts after the game's start-up: its hooks
   only catch what runs from then on. When the active mods' property scripts (`data\game\scripts\properties`)
   change, the host fills the game's property database again the next time a match is entered
@@ -134,7 +122,7 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   the mod's folder name and taken back by the host; `write_memory` and a mod's own MinHook are not. The `mod.dll` is
   freed only when no thread runs in it or has an address inside it on its stack; until then it stays mapped,
   without any hook or patch.
-- **Interface:** `sadkmod/include/sadkmod/mod.hpp` (`sadkmod_api`, version 2). `SADKMOD_MAIN` checks the version;
+- **Interface:** `include/sadkmod/mod.hpp` (`sadkmod_api`, version 2). `SADKMOD_MAIN` checks the version;
   fields are only ever appended. Without sadkmod, a mod can implement the exports itself.
 - **Settings:** `sadk::mod_settings()` is the mod's `<name>.ini` next to its `mod.dll` (e.g. `billboards.ini`);
   other files live in `sadk::mod_dir()`.
@@ -169,23 +157,29 @@ build checksum, which a joiner sends before anything can be transferred, leaves 
 (`GameData_ComputeBuildChecksum`; `sadkmod_api::redirect_server_mods`): server mods are matched by name, version and
 hash instead. [TODO: not yet run in the game]
 
-## Building the repo's mods
+## Building mods
+
+A folder of mods needs a Makefile of two lines; `mods.mk` holds the rules:
 
 ```
-make            # build/<name>/ for every mod here: mod.dll plus its .ini files (builds sadkmod first)
+SADKMOD ?= ../sadkmod
+include $(SADKMOD)/mods.mk
+```
+
+```
+make            # build/<name>/ for every mod folder: mod.dll plus its .ini files (builds sadkmod first)
 make verify     # every mod's patches against a DRM-free SADK.exe under Wine (SADK_EXE=<path>)
-make test       # assetshare's archive format under Wine (Wine has no LZMS: only the stored form runs there)
 ```
 
-Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder here with its `.cpp` files (and any
+Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder with its `.cpp` files (and any
 `.ini`, `.txt` or `data/` to ship); `tests/verify_mods.cpp` lists the start functions to verify.
 
 ## Status
 
-The host is tested under Wine (`make test` in `sadkmod`): discovery, flags (from `mod.dll` and marker files; none:
+The host is tested under Wine (`make test`): discovery, flags (from `mod.dll` and marker files; none:
 not loaded), data-file conflicts (also for a mod activated later), overrides through `CreateFileA` / `CreateFileW`,
 writes left alone, the mesh-cache redirect, `mod.dll` loading, hooks chained on one function in load order,
 deactivating and activating mods, a `mod.dll` unloaded while another thread is inside its hook (freed once the thread
 has left), a downloaded `.temp_` mod, the content hash. The mods' patches are verified against `SADK.exe`. In the
-game (maintainer's test, 2026-10-08) the mod system and the repo's mods work, and the property database can be
+game (maintainer's test, 2026-10-08) the mod system and the mods of both repositories work, and the property database can be
 filled again between offline matches (`propreload`). Loading and unloading mods in the running game is [TODO].
