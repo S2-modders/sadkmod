@@ -47,7 +47,10 @@ Ghidra's own behaviour: about 450 functions have no name in the original, only a
 - Plate and decompiler comments starting with `[ai]` come from the project's mapping run. They state
   their evidence and a confidence (`conf=known / inferred / guess`); treat `guess` as a hint.
 - Function tags: `AI` marks a name set by the mapping run; `LIBRARY:<lib>` marks recognized library code
-  (MSVC runtime, STL, etc.); `CUSTOM_THIS` marks a function whose `this` needs custom storage.
+  (MSVC runtime, STL, etc.); `CUSTOM_THIS` marks a function whose `this` needs custom storage; `FACE_THIS` marks a method that is entered
+  through a secondary vftable, whose `this` is an offset pointer into its class (`Class * __((offset(0x8)))`; the
+  decompiler shows `ADJ(this)->field`); `ICF_SHARED` marks one body that the linker folded for unrelated classes and
+  that therefore has no owning class.
 - Address-level narrative documentation lives in `docs/message-catalog.md` (network protocol),
   `docs/types.md` (structs and classes) and `docs/SOURCEMAP.md`.
 

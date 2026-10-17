@@ -450,8 +450,8 @@ void SADK_CDECL reload_properties(void *)
         game::fn::Properties_RegisterLuaLibrary(db);
         msvc::string name = msvc::string::small("data");
         game::fn::ai::properties::PropertiesDb::RunPropertyScript(db, &name);
-        log("mods: property database filled again for the active mods (%u buildings, %u goods)", db->buildingMapSize,
-            db->goodMapSize);
+        log("mods: property database filled again for the active mods (%u buildings, %u goods)", db->buildingMap.size,
+            db->goodMap.size);
     }
 }
 

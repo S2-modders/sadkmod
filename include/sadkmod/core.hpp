@@ -31,6 +31,16 @@ std::uintptr_t module_base(Module m);
 // mapped image being checked instead.
 std::uintptr_t resolve(Module m, std::uintptr_t static_address);
 
+// The `this` of a method that the game enters through a secondary vftable: it points Offset bytes into the object
+// (at the base class whose virtual the method overrides), not at the object's start. The generated declarations use
+// Face<T, Offset> * for such a parameter, so that it cannot be taken for a T *; object() gives the T.
+template <class T, std::size_t Offset>
+struct Face {
+    Face() = delete;
+    T *object() { return reinterpret_cast<T *>(reinterpret_cast<char *>(this) - Offset); }
+    static Face *of(T *object) { return reinterpret_cast<Face *>(reinterpret_cast<char *>(object) + Offset); }
+};
+
 // A name as a template argument (C++20): the generated declarations carry their Ghidra name, for logs.
 template <std::size_t N>
 struct Name {

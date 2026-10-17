@@ -374,6 +374,13 @@ class Program:
             else:
                 info = self.type_info(t["base"])
                 decl = info[0].format(self.cxx[p][1]) if info else f"::std::uint8_t {self.cxx[p][1]}[{max(t['size'], 1)}]"
+                # Ghidra offset pointer ("T * __((offset(0x8)))"): the this of a method entered through a secondary
+                # vftable. A plain T * would be wrong by the offset, so it becomes sadk::Face<T, offset> *.
+                m = re.search(r"__\(\(offset\(0x([0-9a-fA-F]+)\)\)\)$", p)
+                base, depth, dims = self.parse(t["base"])
+                pointee = self.base_info(base) if m and depth == 1 and not dims else None
+                if pointee and pointee[3] in ("struct", "union"):
+                    decl = f"::sadk::Face<{pointee[0]}, 0x{m.group(1)}> *{self.cxx[p][1]}"
                 block(p, f"typedef {decl};\n")
             done.add(p)
 

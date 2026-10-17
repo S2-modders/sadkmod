@@ -92,6 +92,11 @@ SADKMOD_MAIN(start, 1, SADKMOD_CLIENT)   // the mod's version, and what it chang
   leads through the later ones to the game, however late each mod installs its hook (`10_first`, `20_second`: the
   folder name decides). The shim's own hooks always come last, next to the game's code. Table slots
   (`sadk::hook_slot`) are ordered the same way.
+- **Methods entered through a secondary vftable:** some virtual methods (callbacks of an interface the class
+  implements, for example `nGame::System::HandleGameCommand`) get a `this` that points a few bytes into the object,
+  at the base class whose virtual they override. Their declaration says so: the first parameter is
+  `sadk::Face<Class, offset> *` (spelled `game::<ns>::<Class>_offset_0x8_`), not `Class *`. Pass it on to `original`
+  unchanged; `handler->object()` gives the `Class *` when the hook needs the object's fields.
 - **Game events instead of hooks:** `sadk::events::on_frame`, `on_match_enter` (before a match's world is built),
   `on_match_leave`, `on_session_end`, `on_net_event` (every event of the match network). The host hooks the game
   once and calls each mod in load order; a mod's subscriptions end when it is unloaded. `sadk::events::post(fn)`
