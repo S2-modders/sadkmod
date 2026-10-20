@@ -6,6 +6,7 @@
 #include <sadkmod/game/sadk_noav/fn/NComm_Manager.hpp>
 #include <sadkmod/game/sadk_noav/fn/_global.hpp>
 #include <sadkmod/game/sadk_noav/fn/ai.hpp>
+#include <sadkmod/game/tincat3/fn/_global.hpp>
 #include <sadkmod/sadkmod.hpp>
 
 #include <windows.h>
@@ -13,6 +14,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstring>
+#include <type_traits>
 #include <vector>
 
 static int failures, checks;
@@ -228,6 +230,13 @@ static void test_game(const char *exe)
     auto requests = sadk::calls(fn::NComm_Manager::HandleEvent, fn::NComm_Manager::RequestFileFromHost);
     CHECK(requests == (V{0x0040f256, 0x0040f30d}));                                 // across HandleEvent's 2 ranges
     for (auto r : removes) std::printf("CloseFile calls _remove at %08x\n", unsigned(r));
+    // refused (and logged), not searched: `where` without a body, `what` in another module
+    static constexpr char no_body[] = "no body";
+    CHECK(sadk::calls(sadk::Addr{sadk::Module::sadk, 0x00427a00, no_body, nullptr, 0}, fn::_remove).empty());
+    CHECK(sadk::calls(fn::ai::net::S2TftpSession::CloseFile, sadk::tincat::fn::NETDRV_ServerLookForFlags).empty());
+    // a declaration is a template argument: each function its own Hook, one Fn type per signature
+    static_assert(!std::is_same_v<sadk::Hook<fn::_free>, sadk::Hook<fn::_malloc>>);
+    static_assert(std::is_same_v<sadk::Hook<fn::_free>, sadk::Hook<fn::_free>>);
     sadk::verify_with(sadk::Module::sadk, nullptr);
     auto n = sadk::verify_counts();
     CHECK(n.matched == 2 && n.mismatched == 1);

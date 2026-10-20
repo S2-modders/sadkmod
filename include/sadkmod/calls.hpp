@@ -30,13 +30,9 @@ std::vector<std::uintptr_t> find_calls(Module m, const std::uintptr_t *ranges, s
 // no CALL rel32 at `site`.
 std::uintptr_t call_target(Module m, std::uintptr_t site);
 
-template <class W, class T>
-std::vector<std::uintptr_t> calls(const W &, const T &)
-{
-    static_assert(W::body.size > 0, "sadk::calls: `where` has no body in the map (not a function of the map?)");
-    static_assert(W::module == T::module, "sadk::calls: `where` and `what` are in different modules");
-    return find_calls(W::module, W::body.data(), W::body.size, T::address);
-}
+// The typed form. Nothing is found (and the reason logged) if `where` has no body in the map or `what` is in another
+// module.
+std::vector<std::uintptr_t> calls(const Addr &where, const Addr &what);
 
 // Redirects every call to `what` inside `where` to `detour`: patch_call on each site, so each one is checked and
 // recorded like any patch. `expect` is how many calls there must be (-1: any number, at least one); if the count
@@ -44,12 +40,8 @@ std::vector<std::uintptr_t> calls(const W &, const T &)
 int patch_calls(Module m, const std::uintptr_t *ranges, std::size_t n, std::uintptr_t target, const void *detour,
                 const char *what, int expect, const char *where_name, const char *target_name);
 
-template <class W, class T>
-int patch_calls(const W &, const T &, const void *detour, const char *what, int expect = -1)
-{
-    static_assert(W::body.size > 0, "sadk::patch_calls: `where` has no body in the map (not a function of the map?)");
-    static_assert(W::module == T::module, "sadk::patch_calls: `where` and `what` are in different modules");
-    return patch_calls(W::module, W::body.data(), W::body.size, T::address, detour, what, expect, W::name, T::name);
-}
+// The typed form; `label` names the patch (the `what` of the untyped form). Nothing is patched (and the reason logged)
+// if `where` has no body in the map or `target` is in another module.
+int patch_calls(const Addr &where, const Addr &target, const void *detour, const char *label, int expect = -1);
 
 }  // namespace sadk

@@ -40,10 +40,8 @@ bool patch_call(Module m, std::uintptr_t address, std::uintptr_t original, const
 
 // The same with the original call target given as its declaration (only its address is used), e.g.
 //     sadk::patch_call(0x00427b29, sadk::game::fn::_rename, (void *)my_rename, "download destination check");
-template <class G>
-    requires requires { G::address; G::module; }
-bool patch_call(std::uintptr_t address, const G &, const void *target, const char *what) {
-    return patch_call(G::module, address, G::address, target, what);
+inline bool patch_call(std::uintptr_t address, const Addr &original, const void *target, const char *what) {
+    return patch_call(original.module, address, original.address, target, what);
 }
 
 // Shorthands for SADK.exe.

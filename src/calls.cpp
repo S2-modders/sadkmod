@@ -108,4 +108,35 @@ int patch_calls(Module m, const std::uintptr_t *ranges, std::size_t n, std::uint
     return done;
 }
 
+namespace {
+
+// Why calls() / patch_calls() cannot look for `what` inside `where` (nullptr: they can).
+const char *calls_refused(const Addr &where, const Addr &what)
+{
+    if (where.body_size == 0) return "has no body in the map (not a function of the map?)";
+    if (where.module != what.module) return "is in another module than the call target";
+    return nullptr;
+}
+
+}  // namespace
+
+std::vector<std::uintptr_t> calls(const Addr &where, const Addr &what)
+{
+    if (const char *why = calls_refused(where, what)) {
+        log("calls: %s %s - %s not looked for", where.name, why, what.name);
+        return {};
+    }
+    return find_calls(where.module, where.body, where.body_size, what.address);
+}
+
+int patch_calls(const Addr &where, const Addr &target, const void *detour, const char *label, int expect)
+{
+    if (const char *why = calls_refused(where, target)) {
+        log("patch %s: %s %s - not applied", label, where.name, why);
+        return 0;
+    }
+    return patch_calls(where.module, where.body, where.body_size, target.address, detour, label, expect, where.name,
+                       target.name);
+}
+
 }  // namespace sadk

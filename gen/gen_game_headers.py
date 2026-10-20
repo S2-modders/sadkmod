@@ -21,7 +21,7 @@ sizes, so a layout GCC would place differently fails the build instead of readin
 What gets a callable declaration (Fn<...>): named functions whose signature was set by hand or imported
 (sig_source USER_DEFINED / IMPORTED), with a known calling convention, no struct returned by value, and
 (custom storage) `this` in ECX with all other parameters on the stack. Everything else that is named gets an
-address only (Addr<...>), with the reason in a comment. Exception funclets (Unwind@, Catch_All@, LIBRARY:msvc-eh)
+address only (Addr), with the reason in a comment. Exception funclets (Unwind@, Catch_All@, LIBRARY:msvc-eh)
 are skipped.
 
 Names: Ghidra names are kept where they are C++ identifiers; other characters become '_' (`operator==` ->
@@ -89,6 +89,9 @@ HANDWRITTEN = {"/std/string": ("::sadk::msvc::string", 28, 4)}
 
 CC_ATTR = {"__thiscall": "SADK_THISCALL", "__stdcall": "SADK_STDCALL", "__cdecl": "SADK_CDECL",
            "__fastcall": "SADK_FASTCALL"}
+# The same as sadk::Conv: an Fn<> takes the convention apart from a plain function type (core.hpp says why).
+CC_CONV = {"__thiscall": "::sadk::Conv::this_call", "__stdcall": "::sadk::Conv::std_call",
+           "__cdecl": "::sadk::Conv::c_call", "__fastcall": "::sadk::Conv::fast_call"}
 
 
 MACROS = set()   # macro names of the Windows/CRT headers mods include (filled by --macros)
@@ -297,6 +300,15 @@ class Program:
 
     def fn_pointer(self, f, cc=None, this=None):
         cc = cc or f["cc"]
+        ret, args = self.fn_parts(f, cc, this)
+        return f"{ret} ({CC_ATTR[cc]} *)({', '.join(args)})"
+
+    def fn_type(self, f):
+        """(Conv enumerator, plain function type) of an Fn<> declaration."""
+        ret, args = self.fn_parts(f, f["cc"])
+        return CC_CONV[f["cc"]], f"{ret}({', '.join(args)})"
+
+    def fn_parts(self, f, cc, this=None):
         ret = "void" if f["ret"] == "/void" else self.param_type(f["ret"])
         args = []
         params = f["params"]
@@ -308,7 +320,7 @@ class Program:
         args += [self.param_type(p["type"]) for p in params]
         if f.get("varargs"):
             args.append("...")
-        return f"{ret} ({CC_ATTR[cc]} *)({', '.join(args)})"
+        return ret, args
 
     # ---- emit: types ------------------------------------------------------------------------------------------
     def emit_types(self, out):
@@ -528,7 +540,7 @@ class Program:
             counts = defaultdict(int)
             for f in fs:
                 counts[ident(f["name"])] += 1
-            reserved = {("std_" if c == "std" else ident(c)) for c in child_ns.get(ns, ())}
+            reserved = {("std_" if c == "std" else ident(c)) for c in child_ns.get(ns, ())} | {"detail_"}
             used = set()
             for f in sorted(fs, key=lambda f: f["entry"]):
                 base = ident(f["name"], reserved)
@@ -542,15 +554,22 @@ class Program:
                 doc = f"// {f['sig']}" + (f"  [{f['cc']}]" if f["cc"] else "")
                 if plate:
                     doc += f"\n// {plate}"
+                # The name and the code ranges are named arrays in detail_, not literals: a declaration is a valid
+                # template argument (Hook<F>) only if its pointers point at named objects.
                 label = cstr(f"{f['ns']}::{f['name']}" if f["ns"] else f["name"])
                 body = f.get("body") or []   # [start, end) ranges of its code (sadk::calls)
+                data = f"namespace detail_ {{ inline constexpr char {n}_name[] = {label}; "
                 if body:
                     nums = ", ".join(f"0x{v}" for r in body for v in r)
-                    label += f", ::sadk::Body<{len(body)}>{{{{{nums}}}}}"
+                    data += f"inline constexpr ::std::uintptr_t {n}_body[] = {{{nums}}}; "
+                data += "}"
+                init = (f"{mod}, {addr}, detail_::{n}_name, "
+                        + (f"detail_::{n}_body, {len(body)}" if body else "nullptr, 0"))
                 if why is None:
-                    line = f"{doc}\ninline constexpr ::sadk::Fn<{mod}, {addr}, {self.fn_pointer(f)}, {label}> {n}{{}};"
+                    conv, ftype = self.fn_type(f)
+                    line = f"{doc}\n{data}\ninline constexpr ::sadk::Fn<{conv}, {ftype}> {n}{{{{{init}}}}};"
                 else:
-                    line = f"{doc}\n// address only: {why}\ninline constexpr ::sadk::Addr<{mod}, {addr}, {label}> {n}{{}};"
+                    line = f"{doc}\n// address only: {why}\n{data}\ninline constexpr ::sadk::Addr {n}{{{init}}};"
                 result[tuple(parts)].append(line)
         return result
 
@@ -628,7 +647,7 @@ def generate(sourcemap_dir, out_dir):
             for ns, lines in sorted(items):
                 text.append(f"namespace {'::'.join([root, 'fn', *ns])} {{\n\n" + "\n\n".join(lines) + "\n\n}\n\n")
                 n_fn += sum(1 for l in lines if "::sadk::Fn<" in l)
-                n_addr += sum(1 for l in lines if "::sadk::Addr<" in l)
+                n_addr += sum(1 for l in lines if "::sadk::Addr " in l)
             fname = f"fn/{g}.hpp"
             write(os.path.join(base, fname), "".join(text))
             headers.append(fname)

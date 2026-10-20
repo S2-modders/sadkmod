@@ -52,7 +52,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 
 | Header | What |
 |---|---|
-| `core.hpp` | `Fn<module, address, pointer type>`, `Var<…>`, `Addr<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
+| `core.hpp` | `Fn<convention, function type>` (an `Addr` with its type), `Addr` (module, address, name, body), `Var<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
 | `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
 | `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
 | `events.hpp` | game events, hooked once by the host and dispatched in load order: `on_frame`, `on_match_enter` (before a match's world is built), `on_match_leave`, `on_session_end` (a network session ends), `on_net_event` (every match-network event); `post(fn)` runs `fn` on the main thread at the next frame, from any thread |
@@ -76,11 +76,11 @@ changes). Namespaces: `sadk::game` for types, `sadk::game::fn` for functions, `s
 each followed by the Ghidra namespace or category. For example `S2CE::CTexture::CreateFromFile` becomes
 `sadk::game::fn::S2CE::CTexture::CreateFromFile`, and the struct is `sadk::game::S2CE::CTexture`.
 
-- **Bodies**: every function of the map carries its code ranges (`Body<n>{{start, end, …}}`, from Ghidra; switch
+- **Bodies**: every function of the map carries its code ranges (`body`, `body_size`: start, end, … from Ghidra; switch
   tables are data and lie outside), which `calls.hpp` decodes.
 - **Callable** (`Fn<…>`): named functions whose signature was set by hand or imported in Ghidra, with a
   known calling convention and no struct returned by value. A custom-storage `this` in ECX with stack
-  parameters counts as thiscall. Other named functions are **address only** (`Addr<…>`), and the comment
+  parameters counts as thiscall. Other named functions are **address only** (`Addr`), and the comment
   above each one says why. Exception funclets are left out.
 - **Layouts**: every field is placed at Ghidra's offset with explicit padding, and each offset and each size
   is `static_assert`ed, so a layout GCC would place differently does not compile. Unknown field types become

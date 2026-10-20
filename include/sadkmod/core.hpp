@@ -4,8 +4,8 @@
 // module's preferred base: SADK.exe 0x00400000 (no relocations, so always there), tincat3.dll 0x10000000.
 // A generated declaration such as
 //     sadk::game::fn::S2CE::CTexture::CreateFromFile
-// is an empty constexpr object of type Fn<Module::sadk, 0x004e80d0, bool (SADK_THISCALL *)(CTexture *, ...)>.
-// Calling it calls the game function; hook.hpp hooks it by that same object.
+// is a constexpr object of type Fn<Conv::this_call, bool(CTexture *, ...)> that holds its module, address, name and
+// code ranges as values. Calling it calls the game function; hook.hpp hooks it by that same object.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -41,47 +41,46 @@ struct Face {
     static Face *of(T *object) { return reinterpret_cast<Face *>(reinterpret_cast<char *>(object) + Offset); }
 };
 
-// A name as a template argument (C++20): the generated declarations carry their Ghidra name, for logs.
+// A name as a template argument (C++20): the generated globals (Var) carry their Ghidra name, for logs.
 template <std::size_t N>
 struct Name {
     char text[N];
     constexpr Name(const char (&s)[N]) { for (std::size_t i = 0; i < N; i++) text[i] = s[i]; }
 };
 
-// A function's code as the Ghidra map has it: N ranges [start, end) of static addresses. Switch tables are data
-// and lie outside them, so the ranges can be decoded instruction by instruction (calls.hpp). Body<0>: not known.
-template <std::size_t N>
-struct Body {
-    std::uintptr_t ranges[2 * N];
-    static constexpr std::size_t size = N;
-    constexpr const std::uintptr_t *data() const { return ranges; }
-};
-template <>
-struct Body<0> {
-    static constexpr std::size_t size = 0;
-    constexpr const std::uintptr_t *data() const { return nullptr; }
-};
-
 // A plain address with no type: code locations, data without a known type, patch sites. For a function of the map,
-// B is its body.
-template <Module M, std::uintptr_t A, Name N = "", auto B = Body<0>{}>
+// `body` is its code as the Ghidra map has it: body_size ranges [start, end) of static addresses, 2 * body_size values
+// (nullptr, 0: not known). Switch tables are data and lie outside them, so the ranges can be decoded instruction by
+// instruction (calls.hpp). `name` and `body` point at named arrays (not literals), so that a declaration can be a
+// template argument (Hook<F>).
 struct Addr {
-    static constexpr Module module = M;
-    static constexpr std::uintptr_t address = A;
-    static constexpr const char *name = N.text;
-    static constexpr auto body = B;
-    std::uintptr_t get() const { return resolve(M, A); }
+    Module module;
+    std::uintptr_t address;
+    const char *name;
+    const std::uintptr_t *body;
+    std::size_t body_size;
+    std::uintptr_t get() const { return resolve(module, address); }
 };
 
-// A game function. P is its function pointer type, calling convention included; B its body (calls.hpp).
-template <Module M, std::uintptr_t A, class P, Name N = "", auto B = Body<0>{}>
-struct Fn {
-    using pointer = P;
-    static constexpr Module module = M;
-    static constexpr std::uintptr_t address = A;
-    static constexpr const char *name = N.text;
-    static constexpr auto body = B;
-    P get() const { return reinterpret_cast<P>(resolve(M, A)); }
+// A game function's calling convention. Not named after the conventions: Windows headers define `cdecl` as a macro.
+enum class Conv : std::uint8_t { this_call, std_call, c_call, fast_call };
+
+// The function pointer type of convention C and plain function type F.
+template <Conv C, class F> struct conv_pointer;
+template <class R, class... A> struct conv_pointer<Conv::this_call, R(A...)> { using type = R (SADK_THISCALL *)(A...); };
+template <class R, class... A> struct conv_pointer<Conv::std_call, R(A...)> { using type = R (SADK_STDCALL *)(A...); };
+template <class R, class... A> struct conv_pointer<Conv::c_call, R(A...)> { using type = R (SADK_CDECL *)(A...); };
+template <class R, class... A> struct conv_pointer<Conv::c_call, R(A..., ...)> { using type = R (SADK_CDECL *)(A..., ...); };
+template <class R, class... A> struct conv_pointer<Conv::fast_call, R(A...)> { using type = R (SADK_FASTCALL *)(A...); };
+
+// A game function: an Addr with its type. The type is the convention plus a plain function type, not the pointer type
+// itself: GCC instantiates a template on thousands of calling-convention pointer types very slowly (PCH build 107 s
+// instead of 24 s, measured 2026-10-20), and only the type is a template argument, so functions of one signature
+// share one Fn.
+template <Conv C, class F>
+struct Fn : Addr {
+    using pointer = typename conv_pointer<C, F>::type;
+    pointer get() const { return reinterpret_cast<pointer>(resolve(module, address)); }
     template <class... X>
     decltype(auto) operator()(X &&...x) const { return get()(static_cast<X &&>(x)...); }
 };
