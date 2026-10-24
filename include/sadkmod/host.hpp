@@ -71,10 +71,10 @@ bool subscribe(const char *owner, std::uint32_t event, void *fn, void *ctx);
 // Fires an event as the game's hooks do (frame also runs what was posted); for tests. net_event is not raised here.
 void raise(std::uint32_t event);
 
-// While off on this thread, the file redirect leaves out the files of server mods (the game's own file is opened).
-// For the build checksum: server mods are matched by the mod that transfers them, not by the checksum, which the
-// game sends before any transfer (docs/s2tftp.md, "Around a transfer").
-void redirect_server_mods(bool on);
+// While off on this thread, the file redirect leaves out every mod's files (the game's own file is opened). For the
+// build checksum: it covers the game's original files, so mods may replace scripts and settings; server mods are
+// matched by the mod that transfers them, which the game's checksum precedes (docs/s2tftp.md, "Around a transfer").
+void redirect_mods(bool on);
 
 // The file redirect on its own, for tests: a path as the game would pass it -> the file to open instead, or
 // nullptr (also nullptr for writes into data\). The result stays valid until the next call on the same thread.

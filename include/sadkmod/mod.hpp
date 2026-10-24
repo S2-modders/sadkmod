@@ -77,7 +77,7 @@ struct sadkmod_api {
     int (*deactivate_mod)(const char *folder);   // 0 done, 1 busy (freed later), 2 not found, 3 not active
     bool (*mod_hash)(const char *folder, char out[33]);
     void *host_module;   // the host's own DLL (the shim, <game>\bin\wsock32.dll): mods may hook its exports
-    void (*redirect_server_mods)(bool on);   // host.hpp: off on this thread = server mods' files not redirected
+    void (*redirect_mods)(bool on);          // host.hpp: off on this thread = no mod's files redirected
     int (*free_pending)();                    // retries freeing unloaded mod.dlls; returns how many still wait
     bool (*subscribe)(const char *mod, std::uint32_t event, void *fn, void *ctx);   // events.hpp
 };

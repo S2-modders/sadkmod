@@ -15,6 +15,6 @@ bool activate(const std::string &folder);
 host::Unload deactivate(const std::string &folder);
 int free_pending();                                // retries freeing unloaded mod.dlls; how many still wait
 std::string content_hash(const std::string &folder);
-void redirect_server_mods(bool on);                // off on this thread: server mods' files are not redirected
+void redirect_mods(bool on);                       // off on this thread: no mod's files are redirected
 
 }  // namespace sadk::mods

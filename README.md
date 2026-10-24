@@ -60,7 +60,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::owned_string` (text on the game's heap, freed when it goes: for strings the game fills in or keeps), `msvc::vector<T>`, `msvc::list<T>` |
 | `ui.hpp` | `ui::room_message(text)`: a line in the pre-game room's chat |
-| `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_server_mods` |
+| `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_mods` |
 | `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)` and `SADKMOD_STOP` (in `entry.hpp`), the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |

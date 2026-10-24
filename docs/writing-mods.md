@@ -54,8 +54,10 @@ Paths are matched case-insensitively, whatever form the game uses (relative or a
   mod host does this. The game's scripts run first and share one Lua state with it, so their globals (pattern, good,
   building ids; constants such as `Bavaria`) can be used. To change a game script, replace the file instead.
 - **Matches.** The game's build checksum covers `data\game` and `data\lobby` → `scripts\**\*.lua` and
-  `settings\**\*.xml`. A mod that changes those makes the host's checksum differ, and only players with the same
-  mods can play matches together (`!CHECKSUM MISMATCH`). Lobby config, models and textures are not covered.
+  `settings\**\*.xml`; the host kicks a joiner whose checksum differs (`!CHECKSUM MISMATCH`). With assetshare
+  (`lobby/mods/assetshare`), which every lobby match needs, the checksum is taken over the game's original files with
+  every mod's files left out, so a mod may replace those files and still join players without it. A mod whose files
+  change the match must therefore be a server mod: assetshare gives every player the host's copy.
 
 ## mod.dll
 
@@ -158,9 +160,9 @@ A map goes with the files of the same name next to it: `<map>.bin` (the map's en
 `CEnviromentMgr::LoadMapEnvData`), `<map>.lua` (its script) and `<map>_<name>.lua` (its cutscene scripts). What is
 transferred is one archive per mod or map file, compressed with LZMS when both sides run Windows 8 or later
 (the Windows Compression API; stored otherwise), sent in 4 KB blocks whatever the host's connection type. The game's
-build checksum, which a joiner sends before anything can be transferred, leaves out server mods' files on both sides
-(`GameData_ComputeBuildChecksum`; `sadkmod_api::redirect_server_mods`): server mods are matched by name, version and
-hash instead. [TODO: not yet run in the game]
+build checksum, which a joiner sends before anything can be transferred, leaves out every mod's files on both sides
+(`GameData_ComputeBuildChecksum`; `sadkmod_api::redirect_mods`): server mods are matched by name, version and hash
+instead, and client mods may replace scripts and settings. [TODO: not yet run in the game]
 
 ## Building mods
 

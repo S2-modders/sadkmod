@@ -39,12 +39,12 @@ std::string content_hash(const std::string &f)
     char h[33] = {};
     return host_api()->mod_hash(f.c_str(), h) ? std::string(h) : std::string();
 }
-void redirect_server_mods(bool on)
+void redirect_mods(bool on)
 {
     if (host_api())
-        host_api()->redirect_server_mods(on);
+        host_api()->redirect_mods(on);
     else
-        host::redirect_server_mods(on);
+        host::redirect_mods(on);
 }
 
 }  // namespace sadk::mods

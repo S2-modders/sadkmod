@@ -106,7 +106,6 @@ struct Index {
     std::unordered_map<std::wstring, std::wstring> files;   // lowercase path below data\ -> the mod's file
     std::unordered_map<std::wstring, std::string> owner;    // the same key -> the mod's folder
     std::unordered_set<std::wstring> meshes;                // lowercase file names (no extension) of modded .kex
-    std::unordered_set<std::wstring> server;                // the keys a server mod provides
 };
 std::atomic<const Index *> current{nullptr};
 std::vector<std::unique_ptr<Index>> indexes;
@@ -127,7 +126,7 @@ void conflict_file(const std::string &first, const std::string &second, const st
 }
 
 // Every file below `dir` into the index as "<rel>\<name>"; returns how many.
-int add_files(Index &ix, const std::wstring &dir, const std::wstring &rel, const std::string &mod, bool server)
+int add_files(Index &ix, const std::wstring &dir, const std::wstring &rel, const std::string &mod)
 {
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
@@ -138,7 +137,7 @@ int add_files(Index &ix, const std::wstring &dir, const std::wstring &rel, const
         std::wstring path = dir + L"\\" + fd.cFileName;
         std::wstring key = lower(rel.empty() ? std::wstring(fd.cFileName) : rel + L"\\" + fd.cFileName);
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            n += add_files(ix, path, key, mod, server);
+            n += add_files(ix, path, key, mod);
             continue;
         }
         if (auto it = ix.owner.find(key); it != ix.owner.end()) {   // the first mod keeps it
@@ -147,7 +146,6 @@ int add_files(Index &ix, const std::wstring &dir, const std::wstring &rel, const
         }
         ix.files[key] = path;
         ix.owner[key] = mod;
-        if (server) ix.server.insert(key);
         std::size_t slash = key.find_last_of(L'\\'), dot = key.find_last_of(L'.');
         std::size_t from = slash == std::wstring::npos ? 0 : slash + 1;
         if (dot != std::wstring::npos && key.compare(dot, std::wstring::npos, L".kex") == 0)
@@ -183,7 +181,7 @@ int rebuild_index()
 {
     auto ix = std::make_unique<Index>();
     for (auto &m : all)
-        if (m->active) add_files(*ix, m->wdir + L"\\data", std::wstring{}, m->folder, (m->flags & SADKMOD_SERVER) != 0);
+        if (m->active) add_files(*ix, m->wdir + L"\\data", std::wstring{}, m->folder);
     int n = static_cast<int>(ix->files.size());
     const Index *old = current.load();
     if (property_files(old) != property_files(ix.get())) properties_dirty = true;
@@ -649,7 +647,7 @@ bool SADK_CDECL api_add_mod(const char *dir) { return add_mod(dir); }
 bool SADK_CDECL api_forget_mod(const char *folder) { return forget_mod(folder); }
 bool SADK_CDECL api_activate_mod(const char *folder) { return activate(folder); }
 int SADK_CDECL api_deactivate_mod(const char *folder) { return static_cast<int>(deactivate(folder)); }
-void SADK_CDECL api_redirect_server_mods(bool on) { redirect_server_mods(on); }
+void SADK_CDECL api_redirect_mods(bool on) { redirect_mods(on); }
 int SADK_CDECL api_free_pending() { return free_pending(); }
 bool SADK_CDECL api_subscribe(const char *mod, std::uint32_t event, void *fn, void *ctx) { return add_sub(mod, event, fn, ctx); }
 bool SADK_CDECL api_mod_hash(const char *folder, char out[33])
@@ -731,7 +729,7 @@ std::unique_ptr<Mod> read_mod(const std::wstring &dir, const std::wstring &folde
     api->activate_mod = api_activate_mod;
     api->deactivate_mod = api_deactivate_mod;
     api->mod_hash = api_mod_hash;
-    api->redirect_server_mods = api_redirect_server_mods;
+    api->redirect_mods = api_redirect_mods;
     api->free_pending = api_free_pending;
     api->subscribe = api_subscribe;
     HMODULE self = nullptr;   // the module this code is linked into: the host
@@ -985,13 +983,13 @@ void raise(std::uint32_t event)
     if (event != events::net_event) dispatch_plain(event);
 }
 
-thread_local bool skip_server_files;
-void redirect_server_mods(bool on) { skip_server_files = !on; }
+thread_local bool skip_mod_files;
+void redirect_mods(bool on) { skip_mod_files = !on; }
 
 const wchar_t *redirect(const wchar_t *path, bool write)
 {
     const Index *ix = current.load();
-    if (!ix || ix->files.empty()) return nullptr;
+    if (!ix || ix->files.empty() || skip_mod_files) return nullptr;
     thread_local wchar_t result[MAX_PATH * 2];   // trivially destructible: no thread-exit hooks needed
     auto give = [&](const std::wstring &p) -> const wchar_t * {
         if (p.size() >= MAX_PATH * 2) return nullptr;
@@ -1006,7 +1004,6 @@ const wchar_t *redirect(const wchar_t *path, bool write)
     if (!write && low.size() > data_prefix.size() && low.compare(0, data_prefix.size(), data_prefix) == 0) {
         auto it = ix->files.find(low.substr(data_prefix.size()));
         if (it == ix->files.end()) return nullptr;
-        if (skip_server_files && ix->server.count(it->first)) return nullptr;
         return give(it->second);
     }
     // The mesh cache of a modded .KEX: <cache>\<mesh>[_<variant>].mshraw -> <cache>\mods\<same name>
