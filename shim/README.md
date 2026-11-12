@@ -67,8 +67,10 @@ still be narrowed down by switching them off.
 
 **The call stack.** The game was built with frame pointer omission and has no symbols, so DbgHelp's walker loses
 frames. The shim walks it itself: a function of the Ghidra map keeps EBP as its frame pointer only if it starts with
-`PUSH EBP; MOV EBP,ESP` and the crash lies past that (a system DLL's function: by its exports; sadkmod's code keeps
-frames, `-fno-omit-frame-pointer` in `pch.mk`). Without a frame the next return address above ESP is taken: first
+`PUSH EBP; MOV EBP,ESP` and the crash lies past that (a system DLL's function: by its exports). sadkmod's code keeps
+frames (`-fno-omit-frame-pointer` in `pch.mk`) except in leaf functions; a mod built before that is recognised by the
+prologue of its exported `sadkmod_init`, and its frame pointer is then followed only where a direct call proves the
+step. Without a frame the next return address above ESP is taken: first
 one whose direct call provably leads to the function, else the nearest whose call could have. A frame is marked `?`
 when it was found without such evidence (perhaps left over from an earlier call); `?` frames never decide the cause.
 Names come from the Ghidra map (`gen_symbols.py`: every function of `SADK.exe` and `tincat3.dll` with its code
@@ -92,8 +94,9 @@ first report.
 
 **Tests.** `make test`: a test program plays the game, a DLL in `mods\crashmod\` a mod (`tests/crash_test.cpp`,
 `tests/crash_mod.cpp`): an error the mod survives twice (one record, "2 times"), a crash in the mod, in the program's
-own code, in the program's code called by the mod, in a thread of the mod; each checked for its cause, the ZIP's
-content and the dump (`tests/crash_check.py`). `make test-game GAME=<install>`: the real `SADK.exe` under Wine and
+own code, in the program's code called by the mod, in a thread of the mod, and the crash and the call again with the
+mod built without frame pointers (`crash_mod_old.dll`); each checked for its cause, the ZIP's content and the dump
+(`tests/crash_check.py`). `make test-game GAME=<install>`: the real `SADK.exe` under Wine and
 xvfb, from a folder of links to the install (with a stand-in `PhysXLoader.dll`), crashed by `tests/game/crashtest`
 early in its start-up in seven ways (survived error, mod, native, called by the mod, thread, `abort`, pure virtual
 call; `tests/game_crash_check.py`) [PROVEN under Wine, 2026-11-12: all seven, causes and names as expected].

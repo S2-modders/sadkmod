@@ -6,6 +6,10 @@
 
 static volatile LONG recovering;
 
+// What tells the crash report whether a mod.dll keeps frame pointers (its prologue); not a leaf, so it has one when
+// built with -fno-omit-frame-pointer. The "old" build (crash_mod_old.dll) is made without.
+extern "C" __declspec(dllexport) bool sadkmod_init(const void *) { return GetTickCount() != 0; }
+
 // The mod survives its own fault: a handler after the shim's skips the instruction.
 static LONG CALLBACK skip_fault(EXCEPTION_POINTERS *ep)
 {

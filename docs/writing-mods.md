@@ -192,7 +192,8 @@ raises and something catches go into `errors_<time>.txt` next to it, once per pl
 
 The offsets are relative to your `mod.dll`. `mods.mk` links it stripped (`-s`): link a copy without `-s` and
 `i686-w64-mingw32-addr2line -f -C -e <that copy> <image base + offset>` names the function. Keep the compiler flags
-of `pch.mk` (they include `-fno-omit-frame-pointer`): without frame pointers the report cannot walk past your code.
+of `pch.mk` (they include `-fno-omit-frame-pointer`): a mod built without frame pointers still gets the right cause,
+but the call stack above its code is found by scanning and partly marked `?`.
 
 ## Status
 

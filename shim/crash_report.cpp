@@ -10,6 +10,7 @@
 #include <psapi.h>
 
 #include <algorithm>
+#include <map>
 #include <cstdio>
 #include <cstring>
 
@@ -245,6 +246,35 @@ struct Scene {
 
     static std::string owner(const std::string &o) { return o.empty() ? "the mod loader" : "mod \"" + o + "\""; }
 
+    // Was this mod.dll built with frame pointers (sadkmod since 0d955c2, pch.mk)? Its exported sadkmod_init, which
+    // calls the mod's start function, then begins with PUSH EBP; MOV EBP,ESP (55 89 E5). An older build, or a helper
+    // DLL without that export, is not known to keep frames. Read from the loaded image without faulting; once a module.
+    bool keeps_frames(const ModuleRec &m) const
+    {
+        auto it = frames_known.find(m.base);
+        if (it != frames_known.end()) return it->second;
+        bool yes = false;
+        std::uint32_t lfanew = 0, dir = 0, n = 0, names = 0, ords = 0, funcs = 0;
+        if (safe_read(m.base + 0x3c, &lfanew, 4) && safe_read(m.base + lfanew + 0x78, &dir, 4) && dir &&
+            safe_read(m.base + dir + 0x18, &n, 4) && safe_read(m.base + dir + 0x1c, &funcs, 4) &&
+            safe_read(m.base + dir + 0x20, &names, 4) && safe_read(m.base + dir + 0x24, &ords, 4))
+            for (std::uint32_t i = 0; i < n && i < 4096; i++) {
+                std::uint32_t name = 0;
+                char text[16] = {};
+                if (!safe_read(m.base + names + 4 * i, &name, 4) || !safe_read(m.base + name, text, 13)) continue;
+                if (std::memcmp(text, "sadkmod_init", 13) != 0) continue;
+                std::uint16_t ord = 0;
+                std::uint32_t rva = 0;
+                std::uint8_t b[3];
+                yes = safe_read(m.base + ords + 2 * i, &ord, 2) && safe_read(m.base + funcs + 4 * ord, &rva, 4) &&
+                      safe_read(m.base + rva, b, 3) && b[0] == 0x55 && b[1] == 0x89 && b[2] == 0xE5;
+                break;
+            }
+        frames_known[m.base] = yes;
+        return yes;
+    }
+    mutable std::map<std::uintptr_t, bool> frames_known;
+
     // A function by its entry: its name, or its address.
     std::string function(std::uintptr_t entry) const
     {
@@ -348,12 +378,14 @@ int leads_to(const Scene &s, std::uintptr_t ret, std::uintptr_t pc)
 // Does the code at `pc` run with EBP as its frame pointer? 1 yes, 0 no, -1 not known. A function keeps a frame if it
 // starts with PUSH EBP; MOV EBP,ESP (MSVC 8B EC, GCC 89 E5; after an optional MOV EDI,EDI) and pc lies past that. The
 // game was built with frame pointer omission: its functions are checked by their entry in the Ghidra map, a system
-// DLL's by its exports. sadkmod's code (the shim, the mods) keeps a frame in every function that calls another, so
-// only its innermost frame is not known.
+// DLL's by its exports. sadkmod's code keeps a frame in every function that calls another (a leaf may have none, so
+// the innermost frame is not known): the shim's always, a mod's if it was built so (Scene::keeps_frames); an older
+// mod is not known either, so its frame pointer is followed only where a direct call proves the step.
 int keeps_frame(const Scene &s, std::uintptr_t pc, bool innermost)
 {
     Where w = s.where(pc);
-    if (w.kind == Kind::shim || w.kind == Kind::mod) return innermost ? -1 : 1;
+    if (w.kind == Kind::shim) return innermost ? -1 : 1;
+    if (w.kind == Kind::mod) return innermost || !s.keeps_frames(*w.module) ? -1 : 1;
     if (w.kind == Kind::stub || w.kind == Kind::none) return 0;
     if (w.kind == Kind::trampoline) return -1;
     std::uintptr_t entry = w.entry ? w.entry : s.export_entry(pc);

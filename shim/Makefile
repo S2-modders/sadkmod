@@ -54,7 +54,10 @@ build/crash_test.exe: tests/crash_test.cpp $(CRASH_OBJ) $(LIB)
 build/crash_mod.dll: tests/crash_mod.cpp
 	$(CXX) -O2 -fno-omit-frame-pointer -shared -static-libgcc -o $@ $<
 
-test: wsock32.dll build/load_shim.exe build/crash_test.exe build/crash_mod.dll
+build/crash_mod_old.dll: tests/crash_mod.cpp   # a mod built before sadkmod kept frame pointers
+	$(CXX) -O2 -fomit-frame-pointer -shared -static-libgcc -o $@ $<
+
+test: wsock32.dll build/load_shim.exe build/crash_test.exe build/crash_mod.dll build/crash_mod_old.dll
 	cp wsock32.dll build/shim_under_test.dll   # as wsock32.dll Wine would load its own instead
 	cd build && rm -f wsock32_shim.txt && WINEDEBUG=-all wine load_shim.exe shim_under_test.dll
 	sh tests/crash_test.sh
