@@ -327,4 +327,25 @@ int count_owned(const char *owner)
     return n;
 }
 
+bool snapshot(std::vector<Change> &out, unsigned wait_ms)
+{
+    out.clear();
+    if (!ready()) return false;
+    for (DWORD start = GetTickCount(); !TryEnterCriticalSection(&cs);) {
+        if (GetTickCount() - start >= wait_ms) return false;
+        Sleep(1);
+    }
+    for (auto &[target, c] : chains)
+        for (auto &l : c->links)
+            out.push_back(Change{Change::hook, l.owner, l.what, reinterpret_cast<std::uintptr_t>(target), 0,
+                                 reinterpret_cast<std::uintptr_t>(c->stub), reinterpret_cast<std::uintptr_t>(c->trampoline)});
+    for (auto &[slot, s] : slots)
+        for (auto &l : s.links)
+            out.push_back(Change{Change::slot, l.owner, l.what, reinterpret_cast<std::uintptr_t>(slot), 0, 0, 0});
+    for (auto &p : patches)
+        out.push_back(Change{Change::patch, p.owner, p.what, reinterpret_cast<std::uintptr_t>(p.at), p.after.size(), 0, 0});
+    LeaveCriticalSection(&cs);
+    return true;
+}
+
 }  // namespace sadk::registry

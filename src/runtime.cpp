@@ -17,6 +17,7 @@ namespace sadk {
 static CRITICAL_SECTION log_cs;
 static char log_file[MAX_PATH];
 static bool log_ready;
+static void (*log_tap_fn)(const char *line);
 
 void log_open(const char *path)
 {
@@ -24,6 +25,8 @@ void log_open(const char *path)
     std::snprintf(log_file, sizeof log_file, "%s", path);
     log_ready = true;
 }
+
+void log_tap(void (*tap)(const char *line)) { log_tap_fn = tap; }
 
 void log(const char *fmt, ...)
 {
@@ -37,18 +40,22 @@ void log(const char *fmt, ...)
         return;
     }
     if (!log_ready) return;
+    char line[4096];
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    int n = std::snprintf(line, sizeof line, "%04d-%02d-%02d %02d:%02d:%02d  ", t.wYear, t.wMonth, t.wDay, t.wHour,
+                          t.wMinute, t.wSecond);
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(line + n, sizeof line - n, fmt, ap);
+    va_end(ap);
     EnterCriticalSection(&log_cs);
     if (FILE *f = std::fopen(log_file, "a")) {
-        SYSTEMTIME t;
-        GetLocalTime(&t);
-        std::fprintf(f, "%04d-%02d-%02d %02d:%02d:%02d  ", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
-        va_list ap;
-        va_start(ap, fmt);
-        std::vfprintf(f, fmt, ap);
-        va_end(ap);
+        std::fputs(line, f);
         std::fputc('\n', f);
         std::fclose(f);
     }
+    if (log_tap_fn) log_tap_fn(line);
     LeaveCriticalSection(&log_cs);
 }
 

@@ -24,6 +24,8 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace sadk::registry {
 
@@ -49,5 +51,18 @@ Removed remove_owner(const char *owner);
 
 // For tests: how many detours / slot entries / patch records an owner has.
 int count_owned(const char *owner);
+
+// Every change with its owner, for the crash report (shim/crash.cpp). It waits at most `wait_ms` for the registry's
+// lock, since the crashed thread may hold it, and returns false (with `out` empty) when it could not take it.
+struct Change {
+    enum Kind : std::uint8_t { hook, slot, patch } kind;
+    std::string owner;              // "" = the host
+    std::string what;
+    std::uintptr_t at = 0;          // hook: the hooked function; slot: the table entry; patch: its first byte
+    std::size_t size = 0;           // patch: its length
+    std::uintptr_t stub = 0;        // hook: the chain's stub (8 bytes, JMP [top])
+    std::uintptr_t trampoline = 0;  // hook: MinHook's trampoline (the hooked function's first instructions)
+};
+bool snapshot(std::vector<Change> &out, unsigned wait_ms);
 
 }  // namespace sadk::registry

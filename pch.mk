@@ -3,7 +3,9 @@
 # $(SADKMOD_PCH_FLAGS) and let the objects depend on $(SADKMOD_PCH_GCH). GCC uses a precompiled header only when the
 # code-generating flags match the ones it was built with, hence the shared flags; -Winvalid-pch says when it does not.
 # The .gch lives in build/ (never committed); sadkmod's make builds it after the game declarations are generated.
-SADKMOD_CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti
+# -fno-omit-frame-pointer: every function keeps an EBP frame, so the crash report (shim/crash.cpp) can walk a stack
+# through the shim's and the mods' code as it walks through the game's.
+SADKMOD_CXXFLAGS = -std=c++23 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -fno-omit-frame-pointer
 SADKMOD_PCH = $(SADKMOD)/build/pch/sadkmod_pch.hpp
 SADKMOD_PCH_GCH = $(SADKMOD_PCH).gch
 SADKMOD_PCH_FLAGS = -include $(SADKMOD_PCH) -Winvalid-pch

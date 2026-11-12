@@ -54,17 +54,17 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 |---|---|
 | `core.hpp` | `Fn<convention, function type>` (an `Addr` with its type), `Addr` (module, address, name, body), `Var<…>`, `resolve()`, calling convention macros (`SADK_THISCALL`, `SADK_STDCALL`, `SADK_CDECL`, `SADK_FASTCALL`) |
 | `hook.hpp` | `Hook<F>::install` / `::original` / `::remove` (MinHook; the log label defaults to the function's name), `hook_slot` for vtables and other function tables |
-| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain |
+| `registry.hpp` | the host's record of every hook, table slot and patch with its owner: several detours chain on one function in the mods' load order (folder-name order, whenever each was installed; the host's own last), and any owner's changes can be taken back (`remove_owner`), also from the middle of a chain; `snapshot` lists every change with its owner (for the crash report) |
 | `events.hpp` | game events, hooked once by the host and dispatched in load order: `on_frame`, `on_match_enter` (before a match's world is built), `on_match_leave`, `on_session_end` (a network session ends), `on_net_event` (every match-network event); `post(fn)` runs `fn` on the main thread at the next frame, from any thread |
 | `calls.hpp` | `calls(where, what)`: every call from one game function to another, as static addresses, found by decoding `where`'s code (the map's body ranges) in the module's file; `patch_calls(where, what, detour, label, expected)` redirects them all |
 | `patch.hpp` | `patch`, `patch_call` (the original call target as an address or its declaration), `Bytes` with `call_to` / `jmp_to` / `nops` |
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::owned_string` (text on the game's heap, freed when it goes: for strings the game fills in or keeps), `msvc::vector<T>`, `msvc::list<T>` |
 | `ui.hpp` | `ui::room_message(text)`: a line in the pre-game room's chat |
 | `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_mods` |
-| `runtime.hpp` | `log`, `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
+| `runtime.hpp` | `log` (`log_tap` in the host: every line also to a callback), `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)` and `SADKMOD_STOP` (in `entry.hpp`), the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
-| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, lookup of files only a mod has, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it, the property scripts mods add (run after the game's `data.lua`), " (modded)" in the hosted game's name |
+| `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, lookup of files only a mod has, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it, the property scripts mods add (run after the game's `data.lua`), " (modded)" in the hosted game's name; `mods_snapshot` for the crash report |
 | `game/sadk_noav/…` | generated: `types.hpp`, `fn/<namespace>.hpp`, `vars.hpp`, `module.hpp`, `all.hpp` |
 | `game/tincat3/…` | the same for `tincat3.dll` (namespace `sadk::tincat`) |
 
@@ -136,9 +136,10 @@ make            # build/libsadkmod.a and the generated headers
 make test       # self-test under Wine; with SADK_EXE=<DRM-free SADK.exe> also against the binary
 ```
 
-A mod compiles with `-std=c++23 -fno-exceptions -fno-rtti -I<sadkmod>/include -I<sadkmod>/build/include`
-and links `<sadkmod>/build/libsadkmod.a` (add `-static-libgcc -static-libstdc++` for a DLL without
-runtime dependencies).
+A mod compiles with `-std=c++23 -fno-exceptions -fno-rtti -fno-omit-frame-pointer -I<sadkmod>/include
+-I<sadkmod>/build/include` and links `<sadkmod>/build/libsadkmod.a` (add `-static-libgcc -static-libstdc++` for a DLL
+without runtime dependencies). The frame pointer lets the shim's crash report walk a call stack through the mod's
+code (`shim/README.md`, "Crash report").
 
 **A folder of mods.** `mods.mk` builds every mod folder next to the Makefile that includes it, each into
 `build/<name>/` (`docs/writing-mods.md`, "Building mods"):
@@ -162,15 +163,17 @@ at is defined differently, and the mods' verify build (`mods.mk`) defines that o
   installed out of order and run in load order, one removed from the middle, chained table slots, patches undone,
   overlapping patches reported as a conflict). All generated headers compile with every layout check passing.
 - Mod host: `make test` also runs `tests/test_host.cpp` from a scratch game folder (`docs/writing-mods.md`, "Status").
-- The shim on sadkmod (proxy and mod host); the mods' patches and hook targets (map sharing's 9 patches among them)
+- The shim on sadkmod (proxy, mod host and crash report: `shim/README.md`); the mods' patches and hook targets (map sharing's 9 patches among them)
   verified in the repositories that hold the mods. In the running game (maintainer's test, 2026-10-08): the shim,
   the mod host and those mods work.
 
 ## Third-party
 
 `third_party/minhook/`: [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu (BSD 2-clause,
-`LICENSE.txt`), commit in `VERSION.txt`. Only the 32-bit sources are built. The generated headers contain
-names, types and addresses only, no game code.
+`LICENSE.txt`), commit in `VERSION.txt`. Only the 32-bit sources are built.
+`third_party/miniz/`: [miniz](https://github.com/richgel999/miniz) 3.1.2 by Rich Geldreich (MIT, `LICENSE`), used by
+the shim only (the crash report's ZIP and its table of the game's function names). The generated headers and the
+shim's name table contain names, types and addresses only, no game code.
 
 ## Related repositories
 

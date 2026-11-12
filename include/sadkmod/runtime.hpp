@@ -10,6 +10,9 @@ namespace sadk {
 // Log file. Every line gets a timestamp; thread-safe. Until log_open() is called, lines go nowhere.
 void log_open(const char *path);
 void log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+// In the host: `tap` also gets every line written (with its timestamp, at most 4095 characters), under the log's
+// lock. The crash report keeps the last ones (shim/crash.cpp).
+void log_tap(void (*tap)(const char *line));
 
 // <root>\bin\SADK.exe -> paths below <root>, the folder the game data lives in.
 const char *exe_path();

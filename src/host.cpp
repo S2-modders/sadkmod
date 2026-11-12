@@ -843,6 +843,19 @@ std::vector<ModInfo> mods()
     return out;
 }
 
+bool mods_snapshot(std::vector<ModInfo> &out, unsigned wait_ms)
+{
+    out.clear();
+    for (DWORD start = GetTickCount(); !TryEnterCriticalSection(&host_cs);) {
+        if (GetTickCount() - start >= wait_ms) return false;
+        Sleep(1);
+    }
+    for (auto &m : all)
+        out.push_back(ModInfo{m->folder, m->name, m->dir, m->version, m->flags, m->has_dll, m->active, m->pending_free});
+    LeaveCriticalSection(&host_cs);
+    return true;
+}
+
 bool add_mod(const char *dir)
 {
     Lock lock;

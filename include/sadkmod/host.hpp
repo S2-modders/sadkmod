@@ -50,6 +50,9 @@ struct ModInfo {
     bool pending_free = false;   // deactivated, its mod.dll not freed yet (free_pending)
 };
 std::vector<ModInfo> mods();
+// The same for the crash report (shim/crash.cpp): waits at most `wait_ms` for the mod list's lock, since the crashed
+// thread may hold it; false when it could not take it.
+bool mods_snapshot(std::vector<ModInfo> &out, unsigned wait_ms);
 
 // A mod folder outside the scan: read and listed, not active. False if it has no flags or is listed already.
 bool add_mod(const char *dir);

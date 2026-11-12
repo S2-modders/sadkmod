@@ -4,8 +4,10 @@
 // entry point runs. DllMain (under the loader lock) only opens the log, loads the real wsock32.dll and replaces the
 // first 5 bytes of SADK.exe's entry point with a JMP to entry_detour. That runs once on the main thread, after every
 // DLL is loaded and before any game code: it puts the 5 bytes back, checks the exe and loads the mods (sadkmod host:
-// data files and mod.dll files), then calls the real entry point. If the shim is loaded later instead (LoadLibrary,
-// e.g. a test), the same start-up runs on a thread.
+// data files and mod.dll files), then jumps to the real entry point with the stack as the loader left it, so that no
+// frame of the shim stays under the game's (the crash report must not find the shim below every crash). If the shim
+// is loaded later instead (LoadLibrary, e.g. a test), the same start-up runs on a thread.
+#include "crash.hpp"
 #include "shim.hpp"
 
 #include <sadkmod/game/sadk_noav/module.hpp>
@@ -18,7 +20,8 @@ extern "C" {
 void *real_ptrs[N_EXPORTS];   // read by the forwarding thunks (thunks.S)
 }
 
-static unsigned char *entry_point;
+extern "C" unsigned char *entry_point;
+unsigned char *entry_point;
 static unsigned char entry_saved[5];
 
 static void start(const char *where)
@@ -29,18 +32,28 @@ static void start(const char *where)
         return;
     }
     log("start-up %s", where);
+    shim::crash::start(true);   // before the mods: a crash while they start is reported too
     sadk::host::Summary m = sadk::host::start_mods();
     log("mods: %d active, %d data file%s, %d mod.dll started%s", m.mods, m.files, m.files == 1 ? "" : "s", m.dlls,
         m.skipped ? " - SOME NOT LOADED, see above" : "");
 }
 
-// Takes the place of SADK.exe's entry point for one call (the loader calls it like a thread procedure).
-extern "C" DWORD WINAPI entry_detour(void *arg)
+// Takes the place of SADK.exe's entry point once (the loader calls it like a thread procedure): entry_detour calls
+// entry_prepare, then jumps to the restored entry point with the loader's return address and argument still on the
+// stack, as if it had been called directly.
+extern "C" void SADK_CDECL entry_prepare()
 {
     sadk::write_memory(entry_point, entry_saved, sizeof entry_saved);
     start("before the game's entry point");
-    return reinterpret_cast<DWORD(SADK_CDECL *)(void *)>(entry_point)(arg);   // WinMainCRTStartup; does not return
 }
+extern "C" void entry_detour();
+asm(R"(
+    .text
+    .globl _entry_detour
+_entry_detour:
+    call _entry_prepare
+    jmp *_entry_point
+)");
 
 static DWORD WINAPI late_start_thread(LPVOID)
 {
@@ -64,6 +77,7 @@ static bool hook_entry_point()
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID reserved)
 {
+    if (reason == DLL_PROCESS_DETACH) shim::crash::stop();   // pending errors, the summary, empty report files
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     DisableThreadLibraryCalls(self);
 

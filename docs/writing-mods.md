@@ -181,6 +181,19 @@ make verify     # every mod's patches against a DRM-free SADK.exe under Wine (SA
 Install: copy `build/<name>` to `<game>\mods\<name>`. A new mod is a folder with its `.cpp` files (and any
 `.ini`, `.txt` or `data/` to ship); `tests/verify_mods.cpp` lists the start functions to verify.
 
+## When the game crashes
+
+The shim writes a crash report into the game's dump folder (`<My Documents>\SAdK\dumps` unless `-log_path` names
+another): `crash_<time>.zip` with the crash log, a full dump and the logs (`shim/README.md`, "Crash report"). Its
+first lines name the cause: your mod when the crash is in its code (`mods\<name>\mod.dll+0x…`, also a helper DLL in
+its folder) or in bytes it patched; "probably" your mod when the game's code crashed right after your code called it
+directly. A hook of yours that only passed the call on (`Hook<F>::original`) is not blamed. Exceptions your code
+raises and something catches go into `errors_<time>.txt` next to it, once per place.
+
+The offsets are relative to your `mod.dll`. `mods.mk` links it stripped (`-s`): link a copy without `-s` and
+`i686-w64-mingw32-addr2line -f -C -e <that copy> <image base + offset>` names the function. Keep the compiler flags
+of `pch.mk` (they include `-fno-omit-frame-pointer`): without frame pointers the report cannot walk past your code.
+
 ## Status
 
 The host is tested under Wine (`make test`): discovery, flags (from `mod.dll` and marker files; none:
