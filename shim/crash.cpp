@@ -630,6 +630,111 @@ bool add_to_zip(mz_zip_archive &z, const char *name, const std::string &path, bo
     return ok || !big;
 }
 
+// Packs a crash's files into crash_<t>.zip and deletes them; if packing fails they stay as they are. The ZIP is written
+// as crash_<t>.zip.tmp and renamed when complete, so a packing cut short leaves no broken one. `errors`: the errors
+// file to add ("" for none). Used by the crashed game and by the helper.
+bool pack(const std::string &dir, const char *t, const std::string &errors, const char *shim_log, std::string &zip_path)
+{
+    std::string log_name = std::string("crashlog_") + t + ".txt", dump_name = std::string("crashdump_") + t + ".dmp";
+    std::string log_path = dir + "\\" + log_name, dump_path = dir + "\\" + dump_name;
+    zip_path = dir + "\\crash_" + t + ".zip";
+    std::string tmp_path = zip_path + ".tmp", note;
+    std::string errors_name = errors.empty() ? "" : errors.substr(errors.rfind('\\') + 1);
+    DWORD t0 = GetTickCount();
+    mz_zip_archive z;
+    std::memset(&z, 0, sizeof z);
+    bool zipped = mz_zip_writer_init_file_v2(&z, tmp_path.c_str(), 0, 0);
+    if (zipped) {
+        zipped = add_to_zip(z, log_name.c_str(), log_path, false, note) && add_to_zip(z, dump_name.c_str(), dump_path, true, note) &&
+                 (errors_name.empty() || add_to_zip(z, errors_name.c_str(), errors, false, note));
+        add_to_zip(z, "Logfile_0.txt", dir + "\\Logfile_0.txt", false, note);
+        add_to_zip(z, "wsock32_shim.txt", shim_log, false, note);
+        zipped = mz_zip_writer_finalize_archive(&z) && zipped;
+        mz_zip_writer_end(&z);
+    }
+    if (zipped && !MoveFileExA(tmp_path.c_str(), zip_path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        note += format("renaming the ZIP failed (error %lu); ", GetLastError());
+        zipped = false;
+    }
+    if (!zipped) {
+        DeleteFileA(tmp_path.c_str());
+        log("crash report: packing failed (%s) - the files stay as they are: %s", note.c_str(), log_path.c_str());
+        return false;
+    }
+    DeleteFileA(log_path.c_str());
+    DeleteFileA(dump_path.c_str());
+    if (!errors.empty()) DeleteFileA(errors.c_str());
+    LARGE_INTEGER size{};
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (GetFileAttributesExA(zip_path.c_str(), GetFileExInfoStandard, &fa))
+        size.QuadPart = (LONGLONG(fa.nFileSizeHigh) << 32) | fa.nFileSizeLow;
+    log("crash report: %s (%lld MB, packed in %.1f s)%s%s", zip_path.c_str(), size.QuadPart >> 20,
+        (GetTickCount() - t0) / 1000.0, note.empty() ? "" : " - ", note.c_str());
+    return true;
+}
+
+// ── The crash helper ─────────────────────────────────────────────────────────────────────────────────────────────
+// SADK.exe started once more, with HELPER on its command line; main.cpp hands it to run_helper before the game's
+// entry point, so the game itself never runs in it. It writes the dump of the crashed game from outside (a crash with
+// the game's address space used up still gets one), the game ends as soon as the dump is written, and the helper packs
+// the report afterwards (the crashed game used to wait for that too).
+const char HELPER[] = "-sadkmod-crash-helper";
+EXCEPTION_POINTERS fatal_pointers;   // fatal_req's record and context, read by the helper from this process
+
+// Is the loader lock held by another thread (a crash inside a DLL's start-up)? Starting a process may load DLLs here,
+// which would then wait for it forever. PEB +0xa0 LoaderLock, RTL_CRITICAL_SECTION +0x0c OwningThread.
+bool loader_lock_taken()
+{
+    std::uint8_t *peb;
+    asm("movl %%fs:0x30, %0" : "=r"(peb));
+    auto *lock = *reinterpret_cast<RTL_CRITICAL_SECTION **>(peb + 0xa0);
+    DWORD owner = lock ? static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(lock->OwningThread)) : 0;
+    return owner && owner != GetCurrentThreadId();
+}
+
+// Starts the helper and waits until it has written the dump. False, with `note` saying why, if it did not start or
+// wrote none: then this process writes the dump and packs the report itself.
+bool dump_by_helper(const std::string &dir, const char *t, std::string &note)
+{
+    if (loader_lock_taken()) {
+        note = "no helper process: another thread holds the loader lock";
+        return false;
+    }
+    HANDLE dumped = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    if (!dumped) {
+        note = format("no helper process: no event (error %lu)", GetLastError());
+        return false;
+    }
+    std::string cmd = format("\"%s\" %s %lu %lu %08X %08X \"%s\" %s \"%s\"", sadk::exe_path(), HELPER, GetCurrentProcessId(),
+                             fatal_req.tid, unsigned(reinterpret_cast<std::uintptr_t>(&fatal_pointers)),
+                             unsigned(reinterpret_cast<std::uintptr_t>(dumped)), dir.c_str(), t,
+                             errors_path[0] && !errors_zipped ? errors_path : "-");
+    std::vector<char> line(cmd.begin(), cmd.end());
+    line.push_back(0);
+    STARTUPINFOA si{};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi{};
+    // out of a job the game may run in (a launcher's), so that the helper outlives the game; not every job allows it
+    bool up = CreateProcessA(sadk::exe_path(), line.data(), nullptr, nullptr, FALSE, CREATE_BREAKAWAY_FROM_JOB, nullptr,
+                             nullptr, &si, &pi) ||
+              CreateProcessA(sadk::exe_path(), line.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    if (!up) {
+        note = format("the helper process did not start (error %lu)", GetLastError());
+        CloseHandle(dumped);
+        return false;
+    }
+    CloseHandle(pi.hThread);
+    HANDLE wait[2] = {dumped, pi.hProcess};
+    DWORD r = WaitForMultipleObjects(2, wait, FALSE, 2 * 60 * 1000);
+    if (r == WAIT_TIMEOUT) TerminateProcess(pi.hProcess, 1);
+    if (r != WAIT_OBJECT_0)
+        note = format("the helper process %lu wrote no dump%s", pi.dwProcessId,
+                      r == WAIT_TIMEOUT ? " in 2 minutes" : " (wsock32_shim.txt says why)");
+    CloseHandle(pi.hProcess);
+    CloseHandle(dumped);
+    return r == WAIT_OBJECT_0;
+}
+
 void handle_fatal()
 {
     Fatal &f = fatal_req;
@@ -646,51 +751,28 @@ void handle_fatal()
     std::string dir = dump_dir();
     char t[32];
     make_stamp(t, sizeof t, f.time);
-    std::string log_name = std::string("crashlog_") + t + ".txt", dump_name = std::string("crashdump_") + t + ".dmp";
-    std::string log_path = dir + "\\" + log_name, dump_path = dir + "\\" + dump_name, zip_path = dir + "\\crash_" + t + ".zip";
+    std::string log_path = dir + "\\crashlog_" + t + ".txt", dump_path = dir + "\\crashdump_" + t + ".dmp";
+    std::string zip_path = dir + "\\crash_" + t + ".zip", note;
     write_file(log_path, text, false);
-    std::string note;
-    DWORD t0 = GetTickCount();
-    bool dumped = write_dump(dump_path.c_str(), e, text, note);
-    write_file(log_path, format("\nDump: %s, written in %.1f s\n", note.c_str(), (GetTickCount() - t0) / 1000.0), true);
-    log("crash report: %s - %s; dump: %s", cause.c_str(), exception_name(f.record.ExceptionCode), note.c_str());
-
-    // The ZIP: everything a report needs in one file.
     write_repeats();
-    mz_zip_archive z;
-    std::memset(&z, 0, sizeof z);
-    std::string zip_note;
-    DWORD t1 = GetTickCount();
-    std::string errors_name = errors_path[0] ? std::strrchr(errors_path, '\\') + 1 : "";
-    bool zipped = mz_zip_writer_init_file_v2(&z, zip_path.c_str(), 0, 0);
-    if (zipped) {
-        zipped = add_to_zip(z, log_name.c_str(), log_path, false, zip_note) &&
-                 (!dumped || add_to_zip(z, dump_name.c_str(), dump_path, true, zip_note)) &&
-                 (errors_name.empty() || add_to_zip(z, errors_name.c_str(), errors_path, false, zip_note));
-        add_to_zip(z, "Logfile_0.txt", dir + "\\Logfile_0.txt", false, zip_note);
-        add_to_zip(z, "wsock32_shim.txt", shim_log_path, false, zip_note);
-        zipped = mz_zip_writer_finalize_archive(&z) && zipped;
-        mz_zip_writer_end(&z);
-    }
-    if (zipped) {
-        DeleteFileA(log_path.c_str());
-        DeleteFileA(dump_path.c_str());
-        if (!errors_name.empty()) {
-            DeleteFileA(errors_path);
-            errors_zipped = true;
-        }
-        LARGE_INTEGER size{};
-        WIN32_FILE_ATTRIBUTE_DATA fa;
-        if (GetFileAttributesExA(zip_path.c_str(), GetFileExInfoStandard, &fa))
-            size.QuadPart = (LONGLONG(fa.nFileSizeHigh) << 32) | fa.nFileSizeLow;
-        log("crash report: %s (%lld MB, packed in %.1f s)%s%s", zip_path.c_str(), size.QuadPart >> 20,
-            (GetTickCount() - t1) / 1000.0, zip_note.empty() ? "" : " - ", zip_note.c_str());
+    bool zipped = true;
+    if (game && dump_by_helper(dir, t, note)) {
+        errors_zipped = true;   // the helper packs the errors file once the game has ended
+        log("crash report: %s - %s; the helper process wrote the dump and packs %s", cause.c_str(),
+            exception_name(f.record.ExceptionCode), zip_path.c_str());
     } else {
-        DeleteFileA(zip_path.c_str());
-        log("crash report: packing failed (%s) - the files stay as they are: %s, %s", zip_note.c_str(), log_path.c_str(),
-            dumped ? dump_path.c_str() : "no dump");
+        if (!note.empty()) note += "; ";
+        std::string dump_note;
+        DWORD t0 = GetTickCount();
+        write_dump(dump_path.c_str(), GetCurrentProcess(), GetCurrentProcessId(), f.tid, &fatal_pointers, false, text, dump_note);
+        note += dump_note;
+        write_file(log_path, format("\nDump: %s, written in %.1f s\n", note.c_str(), (GetTickCount() - t0) / 1000.0), true);
+        log("crash report: %s - %s; dump: %s", cause.c_str(), exception_name(f.record.ExceptionCode), note.c_str());
+        std::string errors = errors_path[0] && !errors_zipped ? errors_path : "";
+        zipped = pack(dir, t, errors, shim_log_path, zip_path);
+        if (zipped && !errors.empty()) errors_zipped = true;
+        prune_all(dir);
     }
-    prune_all(dir);
     std::snprintf(fatal_summary, sizeof fatal_summary, "\nCause: %s\nThe crash report: %s\n", cause.c_str(),
                   zipped ? zip_path.c_str() : log_path.c_str());
 }
@@ -726,6 +808,8 @@ bool fatal(const EXCEPTION_RECORD *record, const CONTEXT *context, const char *s
     f.source = source;
     f.what = what ? std::strncpy(f.what_buf, what, sizeof f.what_buf - 1) : nullptr;
     GetLocalTime(&f.time);
+    fatal_pointers.ExceptionRecord = &f.record;
+    fatal_pointers.ContextRecord = &f.context;
     // the error slot the exception handler filled for this very exception: it is the crash, not a survived error
     for (Slot &s : slots)
         if (s.state == 2 && s.tid == f.tid && s.record.ExceptionCode == record->ExceptionCode &&
@@ -890,6 +974,60 @@ void stop()
     WIN32_FILE_ATTRIBUTE_DATA fa;
     if (errors_path[0] && GetFileAttributesExA(errors_path, GetFileExInfoStandard, &fa) && !fa.nFileSizeLow && !fa.nFileSizeHigh)
         DeleteFileA(errors_path);
+}
+
+bool is_helper() { return std::strstr(GetCommandLineA(), HELPER) != nullptr; }
+
+// The helper's command line (dump_by_helper): HELPER <pid> <thread> <exception pointers> <event> "<dir>" <time>
+// "<errors file or ->". The pointers and the event are the game's (the event is duplicated from it).
+void run_helper()
+{
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    std::vector<std::string> w;
+    for (const char *c = GetCommandLineA(); *c;) {
+        while (*c == ' ' || *c == '\t') c++;
+        if (!*c) break;
+        std::string word;
+        bool quoted = false;
+        for (; *c && (quoted || (*c != ' ' && *c != '\t')); c++)
+            if (*c == '"') quoted = !quoted;
+            else word += *c;
+        w.push_back(word);
+    }
+    auto at = std::find(w.begin(), w.end(), HELPER);
+    if (w.end() - at < 8) {
+        log("crash helper: incomplete command line: %s", GetCommandLineA());
+        ExitProcess(3);
+    }
+    DWORD pid = std::strtoul(at[1].c_str(), nullptr, 10), tid = std::strtoul(at[2].c_str(), nullptr, 10);
+    auto *pointers = reinterpret_cast<EXCEPTION_POINTERS *>(std::strtoul(at[3].c_str(), nullptr, 16));
+    auto *their_event = reinterpret_cast<HANDLE>(std::strtoul(at[4].c_str(), nullptr, 16));
+    std::string dir = at[5], t = at[6], errors = at[7] == "-" ? "" : at[7];
+    HANDLE game_process = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid), dumped = nullptr;
+    if (!game_process || !DuplicateHandle(game_process, their_event, GetCurrentProcess(), &dumped, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+        log("crash helper: the crashed game (process %lu) cannot be opened (error %lu)", pid, GetLastError());
+        ExitProcess(2);
+    }
+    std::string log_path = dir + "\\crashlog_" + t + ".txt", dump_path = dir + "\\crashdump_" + t + ".dmp", text, note;
+    read_file(log_path, text);
+    DWORD t0 = GetTickCount();
+    if (!write_dump(dump_path.c_str(), game_process, pid, tid, pointers, true, text, note)) {
+        log("crash helper: no dump of process %lu (%s) - the game writes it itself", pid, note.c_str());
+        ExitProcess(2);
+    }
+    double seconds = (GetTickCount() - t0) / 1000.0;
+    write_file(log_path, format("\nDump: %s, written in %.1f s by the helper process\n", note.c_str(), seconds), true);
+    log("crash helper: dump of process %lu: %s, written in %.1f s", pid, note.c_str(), seconds);
+    SetEvent(dumped);   // the game may end now
+    SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
+    WaitForSingleObject(game_process, 30 * 1000);   // its logs are complete once it has ended
+    char shim_log[MAX_PATH];
+    std::snprintf(shim_log, sizeof shim_log, "%s", sadk::exe_path());
+    if (char *slash = std::strrchr(shim_log, '\\')) std::strcpy(slash + 1, "wsock32_shim.txt");
+    std::string zip_path;
+    pack(dir, t.c_str(), errors, shim_log, zip_path);
+    prune_all(dir);
+    ExitProcess(0);
 }
 
 }  // namespace shim::crash

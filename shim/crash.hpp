@@ -16,8 +16,8 @@
 //   crashdump_<time>.dmp  a full-memory minidump (every object of the game), the crash log as its comment stream
 //   errors_<start>.txt    the errors the game survived this session (below), if any
 //   Logfile_0.txt, wsock32_shim.txt   the game's and the shim's logs as they were
-// The files are written loose first and packed into the ZIP afterwards; if packing fails they stay loose. The newest
-// 5 crashes are kept.
+// The files are written loose first and packed into the ZIP afterwards (as crash_<time>.zip.tmp, renamed when
+// complete); if packing fails they stay loose. The newest 5 crashes are kept.
 //
 // Errors the game survives. An exception raised in the game's, the shim's or a mod's code that something catches
 // (the game plays on) goes into errors_<start of the session>.txt in the same folder, with its cause and call stack:
@@ -27,7 +27,7 @@
 //
 // Everything is written by a thread of the shim's own (started with the report), while the crashed thread waits:
 // it has a whole stack (a stack overflow leaves the crashed thread almost none) and the dump shows the crashed
-// thread as it was.
+// thread as it was. In the game the dump and the ZIP are the crash helper's (below).
 #pragma once
 #include "shim.hpp"
 
@@ -43,6 +43,15 @@ namespace shim::crash {
 void start(bool game);
 // DLL_PROCESS_DETACH: writes the errors still pending and the summary, removes empty report files.
 void stop();
+
+// The crash helper: at a fatal crash in the game, the report starts SADK.exe once more with a switch on its command
+// line. That instance writes the dump of the crashed game from outside, so the dump does not need the crashed
+// game's address space (a crash with it used up still gets one), and the game ends as soon as the dump is written.
+// Then it waits for the game to end and packs the report at a low priority. If it cannot start or writes no dump,
+// the crashed game does it all itself, as outside the game. main.cpp asks is_helper() before the game's entry point
+// and then calls run_helper(), which never returns: the game never runs in a helper.
+bool is_helper();
+[[noreturn]] void run_helper();
 
 }  // namespace shim::crash
 
@@ -76,8 +85,11 @@ struct Event {
 // The report text of a fatal crash (`fatal`) or of one survived error. `cause` gets the one-line verdict.
 std::string describe(const Event &e, bool fatal, std::string &cause);
 
-// The minidump: full memory, `comment` as its comment stream. Falls back to smaller dumps if that fails.
-bool write_dump(const char *path, const Event &e, const std::string &comment, std::string &note);
+// The minidump of a process, this one or (from the helper) the crashed game: full memory, `comment` as its comment
+// stream; smaller dumps if that fails. `pointers`: the exception pointers, in that process's memory when
+// `client_pointers`.
+bool write_dump(const char *path, HANDLE process, DWORD pid, DWORD thread_id, EXCEPTION_POINTERS *pointers,
+                bool client_pointers, const std::string &comment, std::string &note);
 
 // Loads the system's dbghelp.dll (and version.dll) and initialises it. At start-up: a crash must not load DLLs (the
 // crashed thread may hold the loader lock).

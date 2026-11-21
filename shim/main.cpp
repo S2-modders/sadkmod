@@ -44,6 +44,7 @@ static void start(const char *where)
 extern "C" void SADK_CDECL entry_prepare()
 {
     sadk::write_memory(entry_point, entry_saved, sizeof entry_saved);
+    if (shim::crash::is_helper()) shim::crash::run_helper();   // a crash report's helper: the game never runs here
     start("before the game's entry point");
 }
 extern "C" void entry_detour();

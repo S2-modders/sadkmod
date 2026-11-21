@@ -47,12 +47,27 @@ catches what it never sees:
 
 **Files.** In the game's dump folder (`g_CrashDirectory` S 00882808: `-log_path`, or `<My Documents>\SAdK\dumps`,
 also before the game has set it): `crash_<time>.zip` with `crashlog_<time>.txt`, `crashdump_<time>.dmp`, the
-session's errors file if there is one, `Logfile_0.txt` and `wsock32_shim.txt`. The loose files are deleted once
-the ZIP is complete; if packing fails they stay. The newest 5 crashes and 10 errors files are kept. The dump is a
-full-memory minidump (with memory info, handles, thread times, unloaded modules; smaller kinds if the system's
-DbgHelp refuses) carrying the crash log as its comment stream. The shim loads the system's `dbghelp.dll` by its
-path: the game's own copy in `bin` (6.5, 2005) cannot write all of it. Measured under Wine with the game in its
-start-up: 173 MB dump, 57 MB packed, 3 s for both. [TODO] the size and time in a running match on Windows.
+session's errors file if there is one, `Logfile_0.txt` and `wsock32_shim.txt`. The ZIP is written as
+`crash_<time>.zip.tmp` and renamed when complete; the loose files are deleted then, and stay if packing fails. The
+newest 5 crashes and 10 errors files are kept. The dump is a full-memory minidump (with memory info, handles, thread
+times, unloaded modules; smaller kinds if the system's DbgHelp refuses) carrying the crash log as its comment
+stream. The shim loads the system's `dbghelp.dll` by its path: the game's own copy in `bin` (6.5, 2005) cannot write
+all of it. Measured under Wine with the game in its start-up: 173 MB dump, 57 MB packed, 3 s for both. Players'
+reports on Windows: 357 to 431 MB dumps written in 3 to 5 s and packed in 15 s when the game closed, 1.8 GB written
+in 7 s and packed in 34 s in a late match.
+
+**The crash helper.** In the game the dump and the ZIP are written by a second `SADK.exe`, started with
+`-sadkmod-crash-helper <pid> <thread> <exception pointers> <event> "<folder>" <time> "<errors file>"`. The shim
+recognises the switch in its entry-point detour and runs the helper instead of the game (`run_helper` never
+returns). The helper opens the crashed game, takes over its event (`DuplicateHandle`) and writes the minidump from
+outside (`MiniDumpWriteDump` on the game's process, the exception pointers in the game's memory). It adds the
+`Dump:` line to the crash log and sets the event; the game then ends. The helper waits up to 30 s for the game to
+end, so that the game's logs are complete, and packs the report at below-normal priority. So the game no longer
+waits for the packing, and the dump no longer needs the crashed game's address space: one player's game had about
+56 MB left, and every dump type failed in-process (0x8007001F). The game starts the helper outside a launcher's
+job where the job allows it, so the helper outlives the game. It writes everything itself, as before, when the
+helper does not start (no process, or another thread holds the loader lock, which starting a process could wait
+for), ends without a dump, or takes more than 2 minutes. Outside the game (the tests' program) there is no helper.
 
 **The cause** (the report's first lines), from the walked call stack:
 - the faulting code is a mod's (`<game>\mods\<folder>\…`, its `mod.dll` or a helper DLL): that mod;
@@ -104,8 +119,8 @@ level 1 to `Logfile_0.txt`), formatted by the shim: a level the game never forma
 strings are read without faulting (`(bad pointer)`) and every other value on its own. A repeated line is counted.
 
 **Threads.** Everything is written by a thread of the shim's own, started with the report, while the crashed
-thread waits (a stack overflow leaves it almost no stack). A second thread that crashes meanwhile waits for the
-first report.
+thread waits (a stack overflow leaves it almost no stack); in the game that thread starts the helper and waits for
+its dump. A second thread that crashes meanwhile waits for the first report.
 
 **Tests.** `make test`: a test program plays the game, a DLL in `mods\crashmod\` a mod (`tests/crash_test.cpp`,
 `tests/crash_mod.cpp`): an error the mod survives twice (one record, "2 times"), a crash in the mod, in the program's

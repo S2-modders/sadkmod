@@ -1012,7 +1012,8 @@ std::string describe(const Event &e, bool fatal, std::string &verdict)
     return out;
 }
 
-bool write_dump(const char *path, const Event &e, const std::string &comment, std::string &note)
+bool write_dump(const char *path, HANDLE process, DWORD pid, DWORD thread_id, EXCEPTION_POINTERS *pointers,
+                bool client_pointers, const std::string &comment, std::string &note)
 {
     DbgHelp &d = dbghelp();
     if (!d.MiniDumpWriteDump) {
@@ -1024,8 +1025,7 @@ bool write_dump(const char *path, const Event &e, const std::string &comment, st
         note = format("cannot create %s (error %lu)", path, GetLastError());
         return false;
     }
-    EXCEPTION_POINTERS ep{const_cast<EXCEPTION_RECORD *>(e.record), const_cast<CONTEXT *>(e.context)};
-    MINIDUMP_EXCEPTION_INFORMATION mei{e.thread_id, &ep, FALSE};
+    MINIDUMP_EXCEPTION_INFORMATION mei{thread_id, pointers, client_pointers};
     MINIDUMP_USER_STREAM us{CommentStreamA, static_cast<ULONG>(comment.size() + 1), const_cast<char *>(comment.c_str())};
     MINIDUMP_USER_STREAM_INFORMATION usi{1, &us};
     // full memory, its layout, handles, thread times, unloaded modules; skip unreadable memory (0x20000)
@@ -1033,8 +1033,7 @@ bool write_dump(const char *path, const Event &e, const std::string &comment, st
     for (DWORD k : kinds) {
         SetFilePointer(f, 0, nullptr, FILE_BEGIN);
         SetEndOfFile(f);
-        if (d.MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), f, static_cast<MINIDUMP_TYPE>(k),
-                                e.record ? &mei : nullptr, &usi, nullptr)) {
+        if (d.MiniDumpWriteDump(process, pid, f, static_cast<MINIDUMP_TYPE>(k), pointers ? &mei : nullptr, &usi, nullptr)) {
             LARGE_INTEGER size{};
             GetFileSizeEx(f, &size);
             note = format("dump type 0x%lx, %lld MB", k, size.QuadPart >> 20);

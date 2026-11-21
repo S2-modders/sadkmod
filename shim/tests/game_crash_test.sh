@@ -27,6 +27,8 @@ for s in ${SCENARIOS:-survive mod native foreign called thread abort purecall}; 
     for try in 1 2; do
         rm -f "$work/bin/wsock32_shim.txt"
         timeout 90 xvfb-run -a wine "$work/bin/SADK.exe" > "$work/stdout.txt" 2>&1 || true
+        # the crash helper (a second SADK.exe) packs the report after the game has ended: wait for it
+        for i in $(seq 60); do pgrep -f sadkmod-crash-helper > /dev/null || break; sleep 1; done
         wineserver -k 2>/dev/null || true   # the next run starts its own Wine session (with its own display)
         wineserver -w 2>/dev/null || true
         grep -q "crashtest: $s" "$work/bin/wsock32_shim.txt" 2>/dev/null && break

@@ -37,6 +37,8 @@ else:
         if len(log) != 1 or len(dmp) != 1 or "wsock32_shim.txt" not in names:
             failures.append(f"ZIP content: {names}")
         if dmp:
+            if z.open(dmp[0]).read(4) != b"MDMP":
+                failures.append("the dump is not a minidump")
             info = z.getinfo(dmp[0])
             print(f"  {scenario}: dump {info.file_size >> 20} MB, packed {info.compress_size >> 20} MB")
         if log:
@@ -63,6 +65,8 @@ else:
                 has(text, "CApplicationEx::Initialize+0x", "crash log (the call stack with names)")
                 has(text, "WinMain+0x", "crash log (the call stack with names)")
             has(shim_log, "crash report: ", "the shim's log")
+            has(shim_log, "crash helper: dump of process", "the shim's log (the helper wrote the dump)")
+            has(text, "by the helper process", "crash log (the helper's Dump line)")
             has(text, "3  crashtest: level 3, text, 1.50, wide, (bad pointer)  (2 times", "crash log (the game's log)")
 
 if failures:
