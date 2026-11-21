@@ -68,6 +68,66 @@ DbgHelp &dbghelp()
     return d;
 }
 
+// ── Version resources ────────────────────────────────────────────────────────────────────────────────────────────
+// version.dll, loaded at start-up like DbgHelp: the product and maker of a DLL that stands in for a Windows DLL.
+struct VersionApi {
+    decltype(&::GetFileVersionInfoSizeA) size = nullptr;
+    decltype(&::GetFileVersionInfoA) info = nullptr;
+    decltype(&::VerQueryValueA) query = nullptr;
+};
+
+VersionApi &version_api()
+{
+    static VersionApi v;
+    static bool tried;
+    if (tried) return v;
+    tried = true;
+    char path[MAX_PATH];
+    UINT n = GetSystemDirectoryA(path, MAX_PATH);
+    HMODULE dll = n && n < MAX_PATH - 16 ? LoadLibraryA(std::strcat(path, "\\version.dll")) : nullptr;
+    if (!dll) return v;
+    bind(dll, v.size, "GetFileVersionInfoSizeA");
+    bind(dll, v.info, "GetFileVersionInfoA");
+    bind(dll, v.query, "VerQueryValueA");
+    return v;
+}
+
+// "<product> <version>, <company or copyright>" from a file's version resource ("" without one); `microsoft` when
+// the company is Microsoft.
+std::string version_text(const std::string &path, bool &microsoft)
+{
+    microsoft = false;
+    VersionApi &v = version_api();
+    if (!v.size || !v.info || !v.query) return "";
+    DWORD handle = 0, n = v.size(path.c_str(), &handle);
+    if (!n || n > (1u << 20)) return "";
+    std::vector<char> buf(n);
+    if (!v.info(path.c_str(), 0, n, buf.data())) return "";
+    std::vector<std::string> langs;
+    struct LangCp { WORD lang, cp; } *tr = nullptr;
+    UINT len = 0;
+    if (v.query(buf.data(), "\\VarFileInfo\\Translation", reinterpret_cast<void **>(&tr), &len) && tr)
+        for (UINT i = 0; i < len / sizeof(LangCp) && i < 4; i++) langs.push_back(format("%04x%04x", tr[i].lang, tr[i].cp));
+    langs.push_back("040904b0");
+    langs.push_back("040904e4");
+    auto get = [&](const char *key) -> std::string {
+        for (auto &l : langs) {
+            char *p = nullptr;
+            UINT pl = 0;
+            std::string q = "\\StringFileInfo\\" + l + "\\" + key;
+            if (v.query(buf.data(), q.c_str(), reinterpret_cast<void **>(&p), &pl) && p && pl && *p) return std::string(p, strnlen(p, pl));
+        }
+        return "";
+    };
+    std::string product = get("ProductName"), version = get("ProductVersion"), company = get("CompanyName");
+    microsoft = company.find("Microsoft") != std::string::npos;
+    std::string s = product.empty() ? get("FileDescription") : product;
+    if (!version.empty()) s += (s.empty() ? "version " : " ") + version;
+    std::string by = company.empty() ? get("LegalCopyright") : company;
+    if (!by.empty()) s += (s.empty() ? "" : ", ") + by;
+    return s;
+}
+
 // ── Modules ──────────────────────────────────────────────────────────────────────────────────────────────────────
 struct ModuleRec {
     std::uintptr_t base = 0, size = 0;
@@ -351,28 +411,35 @@ bool after_call(std::uintptr_t ret)
 bool return_address(const Scene &s, std::uintptr_t v) { return s.module_of(v) && after_call(v); }
 
 // Could the call before `ret` have led to `pc`? 1: yes, a direct call (E8) whose target, followed through JMP thunks
-// (an import thunk, an incremental-link thunk), holds pc or is a hooked function (pc then runs in a detour, a stub or a
-// trampoline); -1: no, a direct call elsewhere; 0: not known, any other call could have gone anywhere.
-int leads_to(const Scene &s, std::uintptr_t ret, std::uintptr_t pc)
+// (an import thunk, an incremental-link thunk), is the function pc lies in or a hooked function (pc then runs in a
+// detour, a stub or a trampoline); -1: no, a direct call elsewhere; 0: not known, any other call could have gone
+// anywhere. `pc_entry` is the entry of pc's function when the Ghidra map knows it (the game's code): then only that
+// entry proves the call. Without it, a target shortly before pc counts, since pc may lie in that function; with it,
+// such a target is only possible (0), a function that ends in a jump to the next one (a tail call) being the case
+// that keeps it.
+int leads_to(const Scene &s, std::uintptr_t ret, std::uintptr_t pc, std::uintptr_t pc_entry)
 {
     std::uint8_t op;
     std::int32_t rel;
     if (!safe_read(ret - 5, &op, 1) || op != 0xE8 || !safe_read(ret - 4, &rel, 4)) return 0;
     std::uintptr_t target = ret + rel;
+    bool nearby = false;
     for (int hop = 0; hop < 3; hop++) {
         if (!s.hooks_on(target).empty()) return 1;
-        if (target <= pc && pc - target < 0x40000) return 1;
+        bool before = target <= pc && pc - target < 0x40000;
+        if (pc_entry ? target == pc_entry : before) return 1;
+        nearby = nearby || before;
         std::uint8_t b[6];
-        if (!safe_read(target, b, 6)) return -1;
+        if (!safe_read(target, b, 6)) break;
         if (b[0] == 0xE9) target = target + 5 + *reinterpret_cast<std::int32_t *>(b + 1);   // JMP rel32
         else if (b[0] == 0xFF && b[1] == 0x25) {                                              // JMP [abs32]
             std::uint32_t slot = *reinterpret_cast<std::uint32_t *>(b + 2), to = 0;
-            if (!safe_read(slot, &to, 4)) return -1;
+            if (!safe_read(slot, &to, 4)) break;
             target = to;
         } else
-            return -1;
+            break;
     }
-    return -1;
+    return nearby ? 0 : -1;
 }
 
 // Does the code at `pc` run with EBP as its frame pointer? 1 yes, 0 no, -1 not known. A function keeps a frame if it
@@ -411,14 +478,14 @@ struct Frame {
 std::vector<Frame> walk(const Stack &st, const Event &e, const Scene &s)
 {
     std::vector<Frame> frames{{e.context->Eip, true}};
-    std::uintptr_t pc = e.context->Eip, esp = e.context->Esp, ebp = e.context->Ebp;
+    std::uintptr_t pc = e.context->Eip, esp = e.context->Esp, ebp = e.context->Ebp, pc_entry = 0;
     int link = 0;   // leads_to() of the candidate found
     // The first return address in [from, to) whose call could have led to pc; with `proven`, only one whose direct
     // call did (a caller through a pointer cannot be proven, but a leftover is rarely a direct call of this function).
     auto candidate = [&](std::uintptr_t from, std::uintptr_t to, std::uintptr_t &slot, bool proven = false) -> std::uintptr_t {
         std::uint32_t v;
         for (std::uintptr_t a = from & ~3u; a + 4 <= to && a + 4 <= st.top(); a += 4)
-            if (st.get(a, v) && return_address(s, v) && (link = leads_to(s, v, pc)) >= (proven ? 1 : 0)) {
+            if (st.get(a, v) && return_address(s, v) && (link = leads_to(s, v, pc, pc_entry)) >= (proven ? 1 : 0)) {
                 slot = a;
                 return v;
             }
@@ -427,12 +494,14 @@ std::vector<Frame> walk(const Stack &st, const Event &e, const Scene &s)
     bool sure = true;
     while (frames.size() < 64) {
         bool innermost = frames.size() == 1;
+        Where here = s.where(pc);
+        pc_entry = here.kind == Kind::game || here.kind == Kind::tincat ? here.entry : 0;
         int frame = keeps_frame(s, pc, innermost);
         std::uintptr_t ret = 0, slot = 0, next_ebp = ebp;
         std::uint32_t saved = 0, fp_ret = 0;
         int fp_link = -1;
         bool fp = ebp >= esp && st.get(ebp, saved) && st.get(ebp + 4, fp_ret) && return_address(s, fp_ret) &&
-                  (fp_link = leads_to(s, fp_ret, pc)) >= 0;
+                  (fp_link = leads_to(s, fp_ret, pc, pc_entry)) >= 0;
         bool strong = false;
         if (frame == -1) {   // nearer than the frame pointer's
             ret = candidate(esp, fp ? ebp + 4 : esp + 0x10000, slot);
@@ -549,6 +618,178 @@ std::string cause(const Scene &s, const std::vector<Where> &f, std::string &deta
     return "the game itself (a native crash)";
 }
 
+// ── Changes that the mod loader did not make ─────────────────────────────────────────────────────────────────────
+// The code sections of SADK.exe and tincat3.dll in memory against their files on disk. A difference the registry
+// does not record (a hook's JMP, a patch) was made by something else in the process: typically another patch that
+// gets in as a proxy DLL (below), or a mod writing past the registry. Only a module loaded at the base its file asks
+// for is compared (a relocated one differs at every fixup). The file is read in pieces into static buffers: a crash
+// with the address space used up can still do it.
+struct Foreign {
+    std::uintptr_t at = 0;
+    std::size_t size = 0;
+    std::uint32_t file_offset = 0;
+    std::uint8_t was[8] = {}, now[8] = {};   // the first bytes (up to 8): in the file, in memory
+};
+
+struct ForeignScan {
+    std::vector<Foreign> found;   // the first 48
+    int total = 0;
+    std::string note;             // a module not compared, and why
+};
+
+// A hook's JMP is 5 bytes at the function, or 5 before it and 2 at it when MinHook used the hot-patch area.
+bool recorded(const Scene &s, std::uintptr_t a)
+{
+    for (auto &c : s.changes) {
+        if (c.kind == Change::patch && a >= c.at && a < c.at + c.size) return true;
+        if (c.kind == Change::hook && a + 5 >= c.at && a < c.at + 5) return true;
+    }
+    return false;
+}
+
+std::uint8_t file_piece[65536], memory_piece[65536];
+
+void compare_module(const Scene &s, std::uintptr_t base, ForeignScan &out)
+{
+    char path[MAX_PATH];
+    if (!base || !GetModuleFileNameA(reinterpret_cast<HMODULE>(base), path, MAX_PATH)) return;
+    const char *name = std::strrchr(path, '\\') ? std::strrchr(path, '\\') + 1 : path;
+    HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        out.note += format("%s: its file could not be read (error %lu); ", name, GetLastError());
+        return;
+    }
+    auto read_at = [&](std::uint32_t offset, void *buf, DWORD n) {
+        DWORD got = 0;
+        return SetFilePointer(f, static_cast<LONG>(offset), nullptr, FILE_BEGIN) != INVALID_SET_FILE_POINTER &&
+               ReadFile(f, buf, n, &got, nullptr) && got == n;
+    };
+    IMAGE_DOS_HEADER dos;
+    IMAGE_NT_HEADERS32 nt;
+    Foreign run;
+    bool open = false;
+    auto close_run = [&]() {
+        if (!open) return;
+        open = false;
+        out.total++;
+        if (out.found.size() >= 48) return;
+        std::size_t n = std::min<std::size_t>(run.size, sizeof run.was);
+        read_at(run.file_offset, run.was, static_cast<DWORD>(n));
+        safe_read(run.at, run.now, n);
+        out.found.push_back(run);
+    };
+    if (!read_at(0, &dos, sizeof dos) || dos.e_magic != IMAGE_DOS_SIGNATURE || !read_at(dos.e_lfanew, &nt, sizeof nt) ||
+        nt.Signature != IMAGE_NT_SIGNATURE) {
+        out.note += format("%s: its file is not a program file; ", name);
+    } else if (nt.OptionalHeader.ImageBase != base) {
+        out.note += format("%s: loaded at %08X, not at its own base %08lX; ", name, unsigned(base), nt.OptionalHeader.ImageBase);
+    } else {
+        std::uint32_t sections = dos.e_lfanew + offsetof(IMAGE_NT_HEADERS32, OptionalHeader) + nt.FileHeader.SizeOfOptionalHeader;
+        for (WORD i = 0; i < nt.FileHeader.NumberOfSections && i < 96; i++) {
+            IMAGE_SECTION_HEADER sh;
+            if (!read_at(sections + i * sizeof sh, &sh, sizeof sh)) break;
+            if (!(sh.Characteristics & (IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE))) continue;
+            std::uint32_t n = std::min<std::uint32_t>(sh.SizeOfRawData, sh.Misc.VirtualSize);
+            for (std::uint32_t done = 0; done < n; done += sizeof file_piece) {
+                DWORD piece = std::min<std::uint32_t>(sizeof file_piece, n - done);
+                std::uintptr_t mem = base + sh.VirtualAddress + done;
+                if (!read_at(sh.PointerToRawData + done, file_piece, piece) || !safe_read(mem, memory_piece, piece)) {
+                    out.note += format("%s: %08X could not be read; ", name, unsigned(mem));
+                    break;
+                }
+                for (DWORD k = 0; k < piece; k++) {
+                    std::uintptr_t a = mem + k;
+                    if (file_piece[k] == memory_piece[k] || recorded(s, a)) continue;
+                    if (open && a - (run.at + run.size) <= 4) {   // a few equal bytes between: the same change
+                        run.size = a - run.at + 1;
+                        continue;
+                    }
+                    close_run();
+                    run = Foreign{};
+                    run.at = a;
+                    run.size = 1;
+                    run.file_offset = sh.PointerToRawData + done + k;
+                    open = true;
+                }
+            }
+            close_run();
+        }
+    }
+    CloseHandle(f);
+}
+
+ForeignScan compare_code(const Scene &s)
+{
+    ForeignScan out;
+    if (!s.changes_ok) {
+        out.note = "not compared: the registry of the mod loader's changes was busy";
+        return out;
+    }
+    compare_module(s, s.exe, out);
+    compare_module(s, s.tincat, out);
+    if (out.note.size() > 2) out.note.resize(out.note.size() - 2);
+    return out;
+}
+
+// A class of the game ("url2tex::CSDKIEWindow") from a function name; "" for a free function.
+std::string class_of(const std::string &function)
+{
+    std::size_t c = function.rfind("::");
+    return c == std::string::npos ? "" : function.substr(0, c);
+}
+
+// The changed functions (of the changes above) in the same class as a sure frame of the call stack.
+std::string related_changes(const Scene &s, const std::vector<Where> &frames, const ForeignScan &fs)
+{
+    std::vector<std::string> classes;
+    for (auto &f : frames)
+        if (f.sure && f.entry && (f.kind == Kind::game || f.kind == Kind::tincat)) {
+            std::string c = class_of(s.function(f.entry));
+            if (!c.empty()) classes.push_back(c);
+        }
+    std::string out;
+    for (auto &c : fs.found) {
+        Where w = s.where(c.at);
+        if (!w.entry || (w.kind != Kind::game && w.kind != Kind::tincat)) continue;
+        std::string fn = s.function(w.entry);
+        if (std::find(classes.begin(), classes.end(), class_of(fn)) != classes.end() && out.find(fn) == std::string::npos)
+            out += (out.empty() ? "" : ", ") + fn;
+    }
+    return out;
+}
+
+// DLLs in the game folder (not in mods\, not the shim) with the name of a Windows DLL: proxies that bring another
+// program's code into the game the way the shim itself does, such as someone else's patch. The Windows DLLs the game
+// ships itself (bin\dbghelp.dll) are Microsoft's and left out.
+struct Proxy {
+    const ModuleRec *module;
+    std::string version;
+};
+
+std::vector<Proxy> find_proxies(const Scene &s)
+{
+    std::vector<Proxy> out;
+    std::string root = lower(std::string(sadk::game_root()) + "\\");
+    char sys[MAX_PATH];
+    UINT n = GetSystemDirectoryA(sys, MAX_PATH);
+    if (!n || n >= MAX_PATH) return out;
+    for (auto &m : s.modules) {
+        if (m.base == s.shim || !m.mod.empty() || lower(m.path).compare(0, root.size(), root) != 0) continue;
+        if (GetFileAttributesA((std::string(sys) + "\\" + m.name).c_str()) == INVALID_FILE_ATTRIBUTES) continue;
+        bool microsoft = false;
+        std::string v = version_text(m.path, microsoft);
+        if (!microsoft) out.push_back(Proxy{&m, v});
+    }
+    return out;
+}
+
+std::string proxy_name(const Proxy &p)
+{
+    std::string rel = p.module->path.substr(std::strlen(sadk::game_root()) + 1);
+    return p.version.empty() ? rel : rel + " (" + p.version + ")";
+}
+
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 std::string cxx_type(const EXCEPTION_RECORD *r)
 {
@@ -607,7 +848,7 @@ void registers_text(std::string &out, const CONTEXT &c)
                   c.Eax, c.Ebx, c.Ecx, c.Edx, c.Esi, c.Edi, c.Ebp, c.Esp, c.Eip, c.EFlags);
 }
 
-void mods_text(std::string &out, const Scene &s)
+void mods_text(std::string &out, const Scene &s, const ForeignScan &fs)
 {
     out += "\nMods\n";
     if (!s.mods_ok) out += "  (the list was busy: the crashed thread may have been changing it)\n";
@@ -629,6 +870,20 @@ void mods_text(std::string &out, const Scene &s)
         if (c.kind == Change::patch) at = format("%08X (%u bytes)", unsigned(c.at), unsigned(c.size));
         out += format("  %s %-60s %s: \"%s\"\n", kind, at.c_str(), Scene::owner(c.owner).c_str(), c.what.c_str());
     }
+    for (auto &f : fs.found) {
+        std::size_t n = std::min<std::size_t>(f.size, sizeof f.was);
+        std::string was, now;
+        for (std::size_t i = 0; i < n; i++) {
+            was += format(i ? " %02X" : "%02X", f.was[i]);
+            now += format(i ? " %02X" : "%02X", f.now[i]);
+        }
+        out += format("  other %-60s not the mod loader: %u byte%s, %s -> %s%s\n", s.where(f.at).label.c_str(),
+                      unsigned(f.size), f.size == 1 ? "" : "s", was.c_str(), now.c_str(), f.size > n ? " ..." : "");
+    }
+    if (fs.total > int(fs.found.size())) out += format("  other and %d more places\n", fs.total - int(fs.found.size()));
+    out += fs.total ? "  (other: the code in memory differs from the file on disk where the mod loader changed nothing)\n"
+                    : "  (no other change: the code in memory matches the files on disk wherever the mod loader changed nothing)\n";
+    if (!fs.note.empty()) out += "  (" + fs.note + ")\n";
 }
 
 void memory_text(std::string &out)
@@ -651,7 +906,7 @@ void memory_text(std::string &out)
     }
 }
 
-void system_text(std::string &out, const Scene &s)
+void system_text(std::string &out, const Scene &s, const std::vector<Proxy> &proxies)
 {
     typedef LONG(WINAPI * RtlGetVersion_t)(OSVERSIONINFOW *);
     OSVERSIONINFOW v{};
@@ -664,8 +919,12 @@ void system_text(std::string &out, const Scene &s)
     out += format("\nSystem\n  Windows %lu.%lu.%lu%s, %lu processors\n  command line: %s\n", v.dwMajorVersion,
                   v.dwMinorVersion, v.dwBuildNumber, wine, si.dwNumberOfProcessors, GetCommandLineA());
     out += "\nModules\n";
-    for (auto &m : s.modules)
-        out += format("  %08X %08X  %s\n", unsigned(m.base), unsigned(m.size), m.path.c_str());
+    for (auto &m : s.modules) {
+        auto p = std::find_if(proxies.begin(), proxies.end(), [&](const Proxy &x) { return x.module == &m; });
+        std::string mark = p == proxies.end() ? "" : "  <- in place of the Windows DLL of this name" +
+                                                         (p->version.empty() ? std::string() : ": " + p->version);
+        out += format("  %08X %08X  %s%s\n", unsigned(m.base), unsigned(m.size), m.path.c_str(), mark.c_str());
+    }
 }
 
 std::string game_text(const Scene &s)
@@ -696,10 +955,30 @@ std::string describe(const Event &e, bool fatal, std::string &verdict)
         frames.back().sure = r.sure;
     }
     std::vector<std::uintptr_t> extra = scan(st, s, raw);
+    ForeignScan foreign;
+    std::vector<Proxy> proxies;
+    if (fatal) {
+        foreign = compare_code(s);
+        proxies = find_proxies(s);
+    }
     std::string detail;
     verdict = cause(s, frames, detail);
     bool game_cause = verdict.rfind("the game", 0) == 0;
-    if (game_cause && s.changes_ok)
+    std::string related = related_changes(s, frames, foreign);
+    if (foreign.total) {
+        std::string from;
+        for (auto &p : proxies) from += (from.empty() ? "" : ", ") + proxy_name(p);
+        if (!from.empty()) from = " DLLs in the game folder in place of Windows DLLs, which can bring in such changes: " + from + ".";
+        if (game_cause && !related.empty()) {
+            verdict = "probably a change to the game's code that the mod loader did not make";
+            detail += format(" The call stack runs through code of the same class as %s, which something other than the "
+                             "mod loader changed (\"other\" under \"Changes to the game's code\").%s", related.c_str(), from.c_str());
+        } else {
+            detail += format(" Something other than the mod loader changed the game's code in %d place%s (\"other\" under "
+                             "\"Changes to the game's code\").%s", foreign.total, foreign.total == 1 ? "" : "s", from.c_str());
+        }
+    }
+    if (game_cause && related.empty() && s.changes_ok)
         for (auto &c : s.changes)
             if (!c.owner.empty()) {
                 detail += " Mods can still change the game's state without being on the stack: if this crash comes "
@@ -722,14 +1001,14 @@ std::string describe(const Event &e, bool fatal, std::string &verdict)
     stack_text(out, s, frames, extra);
     registers_text(out, *e.context);
     if (!fatal) return out;
-    mods_text(out, s);
+    mods_text(out, s, foreign);
     int errors = 0;
     std::string ef = errors_file(&errors);
     out += format("\nErrors the game survived before, this session: %d%s%s\n", errors, ef.empty() ? "" : " (", ef.empty() ? "" : (ef + ")").c_str());
     out += "\nThe game's log (the last lines, every level; Logfile_0.txt has only level 1)\n" + recent_game_log();
     out += "\nThe shim's log (the last lines; all of it is in wsock32_shim.txt)\n" + recent_shim_log();
     memory_text(out);
-    system_text(out, s);
+    system_text(out, s, proxies);
     return out;
 }
 
@@ -769,6 +1048,10 @@ bool write_dump(const char *path, const Event &e, const std::string &comment, st
     return false;
 }
 
-void prepare() { dbghelp(); }
+void prepare()
+{
+    dbghelp();
+    version_api();
+}
 
 }  // namespace shim::report

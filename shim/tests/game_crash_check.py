@@ -44,6 +44,10 @@ else:
             expected = {
                 "mod": ('Cause:       mod "crashtest"', "the game's crash handler (WinMain)"),
                 "native": ("Cause:       the game itself", "the game's crash handler (WinMain)"),
+                "foreign": ("Cause:       probably a change to the game's code that the mod loader did not make",
+                            "url2tex::CSDKIEWindow::CreateHostWindow+0x0        not the mod loader: 1 byte, 83 -> C3",
+                            "CApplicationEx::FrameTick_InGame+0x0",
+                            "code of the same class as CApplicationEx::FrameTick_InGame, which something other than the"),
                 "called": ('Cause:       probably mod "crashtest"', "Generic_StdString_cstr_at4+0x"),
                 "thread": ('Cause:       mod "crashtest"', "Windows' last-chance filter"),
                 "abort": ('Cause:       mod "crashtest"', "abort() was called"),
@@ -53,7 +57,9 @@ else:
                 has(text, e, "crash log")
             has(text, "Game:        SADK.exe build 34688, no match running", "crash log")
             has(text, "hook  ", "crash log (changes to the game's code)")
-            if scenario in ("mod", "native", "called"):
+            if scenario != "foreign":
+                has(text, "(no other change: the code in memory matches the files on disk", "crash log")
+            if scenario in ("mod", "native", "foreign", "called"):
                 has(text, "CApplicationEx::Initialize+0x", "crash log (the call stack with names)")
                 has(text, "WinMain+0x", "crash log (the call stack with names)")
             has(shim_log, "crash report: ", "the shim's log")

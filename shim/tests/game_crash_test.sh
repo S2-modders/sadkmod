@@ -11,7 +11,7 @@ export WINEDEBUG=-all WINEDLLOVERRIDES="wsock32=n,b"
 # the game's dump folder before it sets its own: <My Documents>\SAdK\dumps of the Wine user
 docs=${WINEPREFIX:-$HOME/.wine}/drive_c/users/$USER/Documents/SAdK/dumps
 fail=0
-for s in survive mod native called thread abort purecall; do
+for s in ${SCENARIOS:-survive mod native foreign called thread abort purecall}; do
     rm -rf "$work"
     mkdir -p "$work/bin" "$work/mods/crashtest"
     for f in "$game"/*; do [ "$(basename "$f")" = bin ] || ln -s "$f" "$work/"; done

@@ -8,9 +8,11 @@
 // reports that call UnhandledExceptionFilter directly (__invoke_watson S 006f25e2, ___report_gsfailure S 007001bc).
 // A crash writes, into the game's dump folder (the game's g_CrashDirectory S 00882808: -log_path, else
 // <My Documents>\SAdK\dumps), crash_<time>.zip with
-//   crashlog_<time>.txt   what crashed and why: the cause (a mod, the mod loader or the game itself), the exception,
-//                         the call stack with the game's function names, the mods and their changes to the game's
-//                         code, the last lines of the game's log (every level) and of the shim's log, memory, system
+//   crashlog_<time>.txt   what crashed and why: the cause (a mod, the mod loader, the game itself, or a change to the
+//                         game's code that the mod loader did not make), the exception, the call stack with the
+//                         game's function names, the mods and their changes to the game's code, the code changes
+//                         nobody recorded (SADK.exe and tincat3.dll in memory against their files), the last lines of
+//                         the game's log (every level) and of the shim's log, memory, system (proxy DLLs marked)
 //   crashdump_<time>.dmp  a full-memory minidump (every object of the game), the crash log as its comment stream
 //   errors_<start>.txt    the errors the game survived this session (below), if any
 //   Logfile_0.txt, wsock32_shim.txt   the game's and the shim's logs as they were
@@ -77,8 +79,8 @@ std::string describe(const Event &e, bool fatal, std::string &cause);
 // The minidump: full memory, `comment` as its comment stream. Falls back to smaller dumps if that fails.
 bool write_dump(const char *path, const Event &e, const std::string &comment, std::string &note);
 
-// Loads the system's dbghelp.dll and initialises it. At start-up: a crash must not load DLLs (the crashed thread may
-// hold the loader lock).
+// Loads the system's dbghelp.dll (and version.dll) and initialises it. At start-up: a crash must not load DLLs (the
+// crashed thread may hold the loader lock).
 void prepare();
 
 // Shared by both files.

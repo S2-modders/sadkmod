@@ -7,6 +7,11 @@
 //     mod        a fault in this mod's code
 //     native     the game's own code faults with no mod code on the stack: the hook leaves a bad pointer in
 //                CApplicationEx +0x64 (the -log_path string), which Initialize hands to Log_SetDirectory right after
+//     foreign    as native, after writing a RET over the first byte of url2tex::CSDKIEWindow::CreateHostWindow
+//                S 005c8760 and of CApplicationEx::FrameTick_InGame S 004018e0 past the registry, as another patch in
+//                the process does: the report lists both as changes the mod loader did not make, and blames them
+//                since the second is of the class of a frame (CApplicationEx::Initialize). Neither runs before the
+//                crash.
 //     called     this mod calls a game function that faults (Generic_StdString_cstr_at4 S 0072b260 on a null object)
 //     thread     a thread of this mod faults (no handler of the game's covers it)
 //     abort      this mod calls the C runtime's _abort S 006fdfcc
@@ -66,7 +71,12 @@ static bool SADK_THISCALL parse(sadk::game::CApplicationEx *app, char *cmd)
         ExitProcess(0);
     }
     if (kind == "mod") FAULT();
-    if (kind == "native") {
+    if (kind == "foreign") {
+        const unsigned char ret = 0xC3;
+        sadk::write_memory(reinterpret_cast<void *>(sadk::resolve(sadk::Module::sadk, 0x005c8760)), &ret, 1);
+        sadk::write_memory(reinterpret_cast<void *>(sadk::resolve(sadk::Module::sadk, 0x004018e0)), &ret, 1);
+    }
+    if (kind == "native" || kind == "foreign") {
         auto *path = sadk::at<sadk::msvc::string>(app, 0x64);   // logPath: its text "at" address 0x10
         path->capacity = 0x20;
         path->size = 5;

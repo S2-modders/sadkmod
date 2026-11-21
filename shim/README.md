@@ -65,13 +65,28 @@ start-up: 173 MB dump, 57 MB packed, 3 s for both. [TODO] the size and time in a
 The report lists the mods and every change to the game's code by owner, so a native crash with mods active can
 still be narrowed down by switching them off.
 
+**Changes the mod loader did not make.** For a fatal crash the report compares the code sections of `SADK.exe` and
+`tincat3.dll` in memory with their files on disk (only a module at the base its file asks for; the file is read in
+64 KB pieces into static buffers, so a crash with the address space used up can still do it). A difference that is
+not a hook's JMP or a patch of the registry is listed as `other`, by function name, with its old and new bytes: it
+was made by something else in the process, usually another patch that loads as a proxy DLL, or a mod writing past
+the registry. If one of those functions is of the same class (the map's `namespace::class`) as a sure frame of the
+call stack, a crash that would otherwise be the game's own is blamed on it ("probably a change to the game's code
+that the mod loader did not make"). The module list marks the DLLs of the game folder (outside `mods\`, other than
+the shim) that carry the name of a Windows DLL and are not Microsoft's, with their version resource: such a proxy
+brings in another program's code the way the shim does. Players' installs carry such patches
+(`docs/BINARY_PATCHES.md`, third-party patches); one of them made the game crash at every exit.
+
 **The call stack.** The game was built with frame pointer omission and has no symbols, so DbgHelp's walker loses
 frames. The shim walks it itself: a function of the Ghidra map keeps EBP as its frame pointer only if it starts with
 `PUSH EBP; MOV EBP,ESP` and the crash lies past that (a system DLL's function: by its exports). sadkmod's code keeps
 frames (`-fno-omit-frame-pointer` in `pch.mk`) except in leaf functions; a mod built before that is recognised by the
 prologue of its exported `sadkmod_init`, and its frame pointer is then followed only where a direct call proves the
 step. Without a frame the next return address above ESP is taken: first
-one whose direct call provably leads to the function, else the nearest whose call could have. A frame is marked `?`
+one whose direct call provably leads to the function, else the nearest whose call could have. For the game's code
+the proof is the call's target (through JMP thunks) being the entry of the function the map puts the address in; a
+target elsewhere shortly before it is only possible (a tail call), so a call of the function before it is not taken
+for proof. A frame is marked `?`
 when it was found without such evidence (perhaps left over from an earlier call); `?` frames never decide the cause.
 Names come from the Ghidra map (`gen_symbols.py`: every function of `SADK.exe` and `tincat3.dll` with its code
 ranges, built into the shim compressed, about 0.5 MB), a mod's frames as `mods\<folder>\mod.dll+0x…`, a system
