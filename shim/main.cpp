@@ -31,7 +31,11 @@ static void start(const char *where)
             sadk::file_md5(sadk::exe_path()).c_str(), sadk::game::md5);
         return;
     }
-    log("start-up %s", where);
+    auto *base = reinterpret_cast<unsigned char *>(GetModuleHandleA(nullptr));
+    auto *nt = reinterpret_cast<IMAGE_NT_HEADERS32 *>(base + reinterpret_cast<IMAGE_DOS_HEADER *>(base)->e_lfanew);
+    log("start-up %s (%s)", where, nt->FileHeader.Characteristics & IMAGE_FILE_LARGE_ADDRESS_AWARE
+                                       ? "SADK.exe is large address aware: 4 GB on 64-bit Windows"
+                                       : "SADK.exe is not large address aware: 2 GB");
     shim::crash::start(true);   // before the mods: a crash while they start is reported too
     sadk::host::Summary m = sadk::host::start_mods();
     log("mods: %d active, %d data file%s, %d mod.dll started%s", m.mods, m.files, m.files == 1 ? "" : "s", m.dlls,

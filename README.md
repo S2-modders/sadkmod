@@ -13,8 +13,9 @@ A small C++23 library for code that runs inside `SADK.exe`, as a DLL the game lo
 - **The mod host** (`host.hpp`) and the **mod interface** (`mod.hpp`): the shim loads `<game>\mods\*` with it —
   data file overrides and `mod.dll` code. How to write a mod: `docs/writing-mods.md`.
 
-Only the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`) is described. Every address is
-specific to that build, so a mod must check `sadk::exe_is_supported()` before patching or hooking anything.
+Only the **DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`) is described, also when the file is
+marked large address aware (`sadk::build_md5`). Every address is specific to that build, so a mod must check
+`sadk::exe_is_supported()` before patching or hooking anything.
 
 ## Example
 
@@ -61,7 +62,7 @@ Calling a game function is calling its declaration: `game::fn::_malloc(64)`,
 | `msvc.hpp` | `msvc::string` (`small`, `borrow`, `view`), `msvc::owned_string` (text on the game's heap, freed when it goes: for strings the game fills in or keeps), `msvc::vector<T>`, `msvc::list<T>` |
 | `ui.hpp` | `ui::room_message(text)`: a line in the pre-game room's chat |
 | `mods.hpp` | the host's mods, the same in a mod and in the host: `mods::list`, `add`, `forget`, `activate`, `deactivate`, `free_pending`, `content_hash`, `redirect_mods` |
-| `runtime.hpp` | `log` (`log_tap` in the host: every line also to a callback), `game_root` / `game_path`, `file_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
+| `runtime.hpp` | `log` (`log_tap` in the host: every line also to a callback), `game_root` / `game_path`, `file_md5`, `build_md5`, `exe_is_supported`, `Ini`, `mod_settings()`, `proc<T>(dll, name)`, `game_malloc` / `game_free` |
 | `verify.hpp` | `map_image`, `verify_with`, `verify_counts` |
 | `mod.hpp` | the mod interface: `sadkmod_api` (version 2), `SADKMOD_MAIN(start, version, flags)` and `SADKMOD_STOP` (in `entry.hpp`), the flags `SADKMOD_CLIENT` / `SADKMOD_SERVER` / `SADKMOD_LOBBY`, `mod_name()` / `mod_dir()`; in a mod, `log`, hooks and patches go to the host |
 | `host.hpp` | the mod host: `start_mods()` (flags, index, `CreateFile` redirect, lookup of files only a mod has, plain-file decrypt pass-through, mesh-cache redirect, `mod.dll` loading), `add_mod` / `activate` / `deactivate` / `free_pending` / `forget_mod`, `content_hash`, the property-database refill when mods change it, the property scripts mods add (run after the game's `data.lua`), " (modded)" in the hosted game's name; `mods_snapshot` for the crash report |

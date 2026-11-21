@@ -18,8 +18,10 @@ directly. `WSOCK32.dll` is not a KnownDLL, so Windows loads a copy from the game
   then jumps to the real entry point with the stack as the loader left it, so no frame of the shim stays below the
   game's.
 - **Crash report:** the shim's own, always loaded with it (below).
-- **Requires the DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`). On any other build the shim stays a
-  pure pass-through: no mods, no crash report.
+- **Requires the DRM-free `SADK.exe`** (MD5 `d4832bc5103c14f5445471af29b8d778`), also when the file is marked large
+  address aware (`sadk::build_md5`: that bit and the PE checksum are left out of the comparison). On any other build
+  the shim stays a pure pass-through: no mods, no crash report. The start-up line in `wsock32_shim.txt` says whether
+  the exe is large address aware.
 - Everything else lives in mods: hosting through the lobby server is the `gamebridge` mod, map sharing
   `assetshare` (both in sadklobby).
 - Build (Linux, mingw-w64, Python 3): `make` -> `wsock32.dll` (builds `sadkmod` first; about 1.1 MB, most of it the

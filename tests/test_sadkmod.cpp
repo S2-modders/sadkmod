@@ -193,6 +193,48 @@ static void test_registry()
     CHECK(reg::count_owned("a") == 0);
 }
 
+// build_md5: the supported SADK.exe as it is, and copies marked large address aware the ways tools do it (the
+// checksum left as it was, corrected, or zeroed), are the same build; a copy with any other byte changed is not.
+static void test_large_address_aware(const char *exe)
+{
+    CHECK(sadk::build_md5(exe) == sadk::game::md5);
+    std::FILE *in = std::fopen(exe, "rb");
+    std::vector<unsigned char> d;
+    if (in) {
+        unsigned char buf[65536];
+        for (std::size_t n; (n = std::fread(buf, 1, sizeof buf, in)) > 0;) d.insert(d.end(), buf, buf + n);
+        std::fclose(in);
+    }
+    CHECK(d.size() > 0x1000);
+    if (d.size() <= 0x1000) return;
+    std::uint32_t nt;
+    std::memcpy(&nt, &d[0x3c], 4);
+    char tmp[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmp);
+    std::strcat(tmp, "test_sadkmod_laa.exe");
+    auto variant = [&](std::uint32_t checksum, bool keep_checksum, std::size_t extra_change) {
+        std::vector<unsigned char> v = d;
+        v[nt + 22] |= IMAGE_FILE_LARGE_ADDRESS_AWARE;
+        if (!keep_checksum) std::memcpy(&v[nt + 24 + 64], &checksum, 4);
+        if (extra_change) v[extra_change] ^= 0xff;
+        std::FILE *out = std::fopen(tmp, "wb");
+        if (out) {
+            std::fwrite(v.data(), 1, v.size(), out);
+            std::fclose(out);
+        }
+        return sadk::build_md5(tmp);
+    };
+    std::uint32_t corrected;   // the file's own checksum: the flag's word grows by 0x20
+    std::memcpy(&corrected, &d[nt + 24 + 64], 4);
+    corrected += IMAGE_FILE_LARGE_ADDRESS_AWARE;
+    CHECK(variant(0, true, 0) == sadk::game::md5);           // the checksum left as it was
+    CHECK(variant(corrected, false, 0) == sadk::game::md5);   // corrected
+    CHECK(variant(0, false, 0) == sadk::game::md5);           // zeroed
+    CHECK(variant(0, true, 0x1000) != sadk::game::md5);       // a byte of the code changed too
+    CHECK(sadk::file_md5(tmp) != sadk::game::md5);
+    DeleteFileA(tmp);
+}
+
 static void test_game(const char *exe)
 {
     std::string md5 = sadk::file_md5(exe);
@@ -201,6 +243,7 @@ static void test_game(const char *exe)
         std::printf("%s is not the DRM-free build (%s) - skipping the game checks\n", exe, md5.c_str());
         return;
     }
+    test_large_address_aware(exe);
     static sadk::MappedImage image;
     CHECK(sadk::map_image(exe, image) && image.preferred == 0x400000);
     sadk::verify_with(sadk::Module::sadk, &image);

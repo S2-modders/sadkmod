@@ -10,6 +10,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace sadk {
 
@@ -109,11 +110,60 @@ std::string file_md5(const char *path)
     return out;
 }
 
+std::string build_md5(const char *path)
+{
+    HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return "";
+    LARGE_INTEGER size{};
+    std::vector<unsigned char> d;
+    DWORD got = 0;
+    bool ok = GetFileSizeEx(f, &size) && size.QuadPart > 0x400 && size.QuadPart < (64 << 20);
+    if (ok) {
+        d.resize(static_cast<std::size_t>(size.QuadPart));
+        ok = ReadFile(f, d.data(), static_cast<DWORD>(d.size()), &got, nullptr) && got == d.size();
+    }
+    CloseHandle(f);
+    if (!ok) return "";
+    std::uint32_t nt = 0;
+    std::memcpy(&nt, &d[0x3c], 4);
+    if (d[0] == 'M' && d[1] == 'Z' && nt + 24 + 68 <= d.size() && std::memcmp(&d[nt], "PE\0\0", 4) == 0) {
+        std::size_t characteristics = nt + 22, checksum = nt + 24 + 64;   // FileHeader, OptionalHeader.CheckSum
+        d[characteristics] &= ~IMAGE_FILE_LARGE_ADDRESS_AWARE;
+        std::uint64_t sum = 0;   // the PE checksum (as CheckSumMappedFile): 16-bit words folded, plus the length
+        for (std::size_t i = 0; i + 1 < d.size(); i += 2) {
+            if (i >= checksum && i < checksum + 4) continue;
+            sum += d[i] | (d[i + 1] << 8);
+            sum = (sum & 0xffff) + (sum >> 16);
+        }
+        if (d.size() & 1) {
+            sum += d.back();
+            sum = (sum & 0xffff) + (sum >> 16);
+        }
+        std::uint32_t value = static_cast<std::uint32_t>(((sum & 0xffff) + (sum >> 16)) + d.size());
+        std::memcpy(&d[checksum], &value, 4);
+    }
+    HCRYPTPROV prov = 0;
+    HCRYPTHASH hash = 0;
+    std::string out;
+    unsigned char digest[16];
+    DWORD len = sizeof digest;
+    if (CryptAcquireContextA(&prov, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
+        CryptCreateHash(prov, CALG_MD5, 0, 0, &hash) && CryptHashData(hash, d.data(), static_cast<DWORD>(d.size()), 0) &&
+        CryptGetHashParam(hash, HP_HASHVAL, digest, &len, 0)) {
+        char hex[33];
+        for (int i = 0; i < 16; i++) std::snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+        out = hex;
+    }
+    if (hash) CryptDestroyHash(hash);
+    if (prov) CryptReleaseContext(prov, 0);
+    return out;
+}
+
 bool exe_is_supported()
 {
     if (host_api()) return true;                      // the host only loads mods into the supported build
     static int state = -1;
-    if (state < 0) state = file_md5(exe_path()) == game::md5;
+    if (state < 0) state = build_md5(exe_path()) == game::md5;
     return state == 1;
 }
 

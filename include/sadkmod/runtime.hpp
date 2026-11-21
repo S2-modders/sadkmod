@@ -22,8 +22,16 @@ std::string game_path(const char *relative);   // game_root() + '\\' + relative
 // MD5 of a file as 32 lowercase hex digits; empty on failure.
 std::string file_md5(const char *path);
 
-// True if this process is the build the generated declarations describe (sadk::game::md5, the DRM-free SADK.exe).
-// Every address in sadkmod is only valid for that build: check this before patching or hooking anything.
+// MD5 of a program file as a build: with the PE header's large-address-aware bit (FileHeader.Characteristics 0x20)
+// cleared and its CheckSum computed again, the two fields a tool that makes a program large address aware changes
+// (some leave the checksum as it was, some correct it). The flag decides only how much address space Windows gives
+// the process (4 GB instead of 2 on 64-bit Windows), and Windows reads it from the file when it creates the
+// process, so no DLL can set it. The supported SADK.exe's own checksum is valid, so its build MD5 is its file MD5.
+std::string build_md5(const char *path);
+
+// True if this process is the build the generated declarations describe (sadk::game::md5, the DRM-free SADK.exe),
+// also when the file is marked large address aware (build_md5). Every address in sadkmod is only valid for that
+// build: check this before patching or hooking anything.
 bool exe_is_supported();
 
 // Windows INI settings, read the way the game reads its own (GetPrivateProfileString).
